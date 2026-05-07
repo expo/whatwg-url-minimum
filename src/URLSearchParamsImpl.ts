@@ -261,3 +261,8 @@ export class URLSearchParams implements URLSearchParamsLike {
     return this.entries();
   }
 }
+
+Object.defineProperty(URLSearchParams.prototype, Symbol.toStringTag, {
+  value: 'URLSearchParams',
+  configurable: true,
+});
