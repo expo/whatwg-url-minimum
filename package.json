@@ -1,6 +1,6 @@
 {
   "name": "whatwg-url-minimum",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Derivative of whatwg-url without unicode handling and optimized for Expo",
   "author": "Phil Pluckthun <phil@kitten.sh>",
   "source": "./src/index.ts",
