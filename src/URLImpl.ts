@@ -244,3 +244,8 @@ export class URL implements URLLike {
     return this.href;
   }
 }
+
+Object.defineProperty(URL.prototype, Symbol.toStringTag, {
+  value: 'URL',
+  configurable: true,
+});
