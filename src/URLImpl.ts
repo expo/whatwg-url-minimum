@@ -7,7 +7,6 @@ import {
   cannotHaveAUsernamePasswordPort,
   setURLUsername,
   setURLPassword,
-  serializeHost,
   serializePath,
 } from './url-state-machine';
 
@@ -74,12 +73,24 @@ export class URL implements URLLike {
   static canParse(input: string | URLLike, base?: string | URLLike): boolean {
     let parsedBase: URLAbstract | null = null;
     if (base != null) {
-      parsedBase = parseURL(`${base}`, null, null, 0);
+      parsedBase = parseURL(
+        typeof base === 'string' ? base : `${base}`,
+        null,
+        null,
+        0
+      );
       if (parsedBase == null) {
         return false;
       }
     }
-    return parseURL(`${input}`, null, parsedBase, 0) != null;
+    return (
+      parseURL(
+        typeof input === 'string' ? input : `${input}`,
+        null,
+        parsedBase,
+        0
+      ) != null
+    );
   }
 
   get href() {
@@ -143,9 +154,9 @@ export class URL implements URLLike {
     if (url.host == null) {
       return '';
     } else if (url.port == null) {
-      return serializeHost(url.host);
+      return url.host;
     } else {
-      return `${serializeHost(url.host)}:${url.port}`;
+      return `${url.host}:${url.port}`;
     }
   }
 
@@ -158,7 +169,7 @@ export class URL implements URLLike {
 
   get hostname() {
     const { url } = this[_implSymbol];
-    return url.host != null ? serializeHost(url.host) : '';
+    return url.host != null ? url.host : '';
   }
 
   set hostname(value: string) {

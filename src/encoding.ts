@@ -13,10 +13,11 @@ export function utf8Decode(bytes: Uint8Array): string {
 
 // See: https://github.com/jsdom/whatwg-url/blob/v15.1.0/lib/percent-encoding.js
 
+const HEX = '0123456789ABCDEF';
+
 // https://url.spec.whatwg.org/#percent-encode
 function percentEncode(c: number): string {
-  const hex = c.toString(16).toUpperCase();
-  return hex.length === 1 ? `%0${hex}` : `%${hex}`;
+  return `%${HEX[(c >> 4) & 0xf]}${HEX[c & 0xf]}`;
 }
 
 function utf8PercentEncodeScalar(
@@ -211,19 +212,15 @@ export function utf8PercentEncodeString(
   percentEncodePredicate: (c: number) => boolean,
   spaceAsPlus = false
 ) {
-  let output = '';
   let idx = 0;
   for (; idx < input.length; idx++) {
     const c = input.charCodeAt(idx);
     if (c >= 0x80) break;
-    if (spaceAsPlus && c === 32 /*' '*/) {
-      output += '+';
-    } else {
-      output += percentEncodePredicate(c) ? percentEncode(c) : input[idx];
-    }
+    if ((spaceAsPlus && c === 32) /*' '*/ || percentEncodePredicate(c)) break;
   }
-  if (idx === input.length) return output;
+  if (idx === input.length) return input;
 
+  let output = input.slice(0, idx);
   for (; idx < input.length; idx++) {
     const c = input.charCodeAt(idx);
     let codePoint = c;

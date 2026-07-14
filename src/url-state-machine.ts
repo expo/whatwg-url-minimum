@@ -195,23 +195,6 @@ function trimTabAndNewline(url: string): string {
   return output;
 }
 
-function toCodePoints(input: string): (number | undefined)[] {
-  const output: (number | undefined)[] = [];
-  for (let idx = 0; idx < input.length; idx++) {
-    const c = input.charCodeAt(idx);
-    if (c >= 0xd800 && c <= 0xdbff && idx + 1 < input.length) {
-      const next = input.charCodeAt(idx + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        output.push(((c - 0xd800) << 10) + next - 0xdc00 + 0x10000);
-        idx++;
-        continue;
-      }
-    }
-    output.push(c);
-  }
-  return output;
-}
-
 function shortenPath(url: URLAbstract) {
   if (
     url.path.length > 0 &&
@@ -249,7 +232,7 @@ export interface URLAbstract {
 
 interface URLParseState {
   pointer: number;
-  input: (number | undefined)[];
+  input: string;
   buffer: string;
   base: URLAbstract | null;
   url: URLAbstract;
@@ -261,7 +244,7 @@ interface URLParseState {
 }
 
 interface Parser {
-  (state: URLParseState, c: number | undefined, cStr: string): URLParseMode;
+  (state: URLParseState, c: number | undefined): URLParseMode;
 }
 
 export const enum URLParseMode {
@@ -303,7 +286,7 @@ export function parseURLRaw(
 
   const state: URLParseState = {
     pointer: 0,
-    input: toCodePoints(input),
+    input,
     buffer: '',
     base: base || null,
     url: url || {
@@ -324,22 +307,11 @@ export function parseURLRaw(
     initialMode: initialMode || URLParseMode.Success,
   };
 
-  for (
-    let mode: URLParseMode = initialMode || URLParseMode.SchemeStart;
-    state.pointer <= state.input.length;
-    ++state.pointer
-  ) {
-    const c = state.input[state.pointer];
-    const cStr = c != null ? String.fromCodePoint(c) : '';
-    mode = next(mode, state, c, cStr);
-    if (mode === URLParseMode.Success) {
-      state.failure = false;
-      break;
-    } else if (mode === URLParseMode.Failure) {
-      state.failure = true;
-      break;
-    }
-  }
+  state.failure =
+    parserForMode(initialMode || URLParseMode.SchemeStart)(
+      state,
+      codePointAt(input, state.pointer)
+    ) === URLParseMode.Failure;
 
   return state;
 }
@@ -354,76 +326,114 @@ export function parseURL(
   return !usm.failure ? usm.url : null;
 }
 
-function next(
-  mode: URLParseMode,
-  state: URLParseState,
-  c: number | undefined,
-  cStr: string
-) {
+function parserForMode(mode: URLParseMode): Parser {
   switch (mode) {
-    case URLParseMode.Failure:
-    case URLParseMode.Success:
-      return mode;
     case URLParseMode.SchemeStart:
-      return parseSchemeStart(state, c, cStr);
+      return parseSchemeStart;
     case URLParseMode.Scheme:
-      return parseScheme(state, c, cStr);
+      return parseScheme;
     case URLParseMode.NoScheme:
-      return parseNoScheme(state, c, cStr);
+      return parseNoScheme;
     case URLParseMode.SpecialRelativeOrAuthority:
-      return parseSpecialRelativeOrAuthority(state, c, cStr);
+      return parseSpecialRelativeOrAuthority;
     case URLParseMode.PathOrAuthority:
-      return parsePathOrAuthority(state, c, cStr);
+      return parsePathOrAuthority;
     case URLParseMode.Relative:
-      return parseRelative(state, c, cStr);
+      return parseRelative;
     case URLParseMode.RelativeSlash:
-      return parseRelativeSlash(state, c, cStr);
+      return parseRelativeSlash;
     case URLParseMode.SpecialAuthoritySlashes:
-      return parseSpecialAuthoritySlashes(state, c, cStr);
+      return parseSpecialAuthoritySlashes;
     case URLParseMode.SpecialAuthorityIgnoreSlashes:
-      return parseSpecialAuthorityIgnoreSlashes(state, c, cStr);
+      return parseSpecialAuthorityIgnoreSlashes;
     case URLParseMode.Authority:
-      return parseAuthority(state, c, cStr);
+      return parseAuthority;
     case URLParseMode.Host:
     case URLParseMode.Hostname:
-      return parseHostname(state, c, cStr);
+      return parseHostname;
     case URLParseMode.Port:
-      return parsePort(state, c, cStr);
+      return parsePort;
     case URLParseMode.File:
-      return parseFile(state, c, cStr);
+      return parseFile;
     case URLParseMode.FileSlash:
-      return parseFileSlash(state, c, cStr);
+      return parseFileSlash;
     case URLParseMode.FileHost:
-      return parseFileHost(state, c, cStr);
+      return parseFileHost;
     case URLParseMode.PathStart:
-      return parsePathStart(state, c, cStr);
+      return parsePathStart;
     case URLParseMode.Path:
-      return parsePath(state, c, cStr);
+      return parsePath;
     case URLParseMode.OpaquePath:
-      return parseOpaquePath(state, c, cStr);
+      return parseOpaquePath;
     case URLParseMode.Query:
-      return parseQuery(state, c, cStr);
+      return parseQuery;
     case URLParseMode.Fragment:
-      return parseFragment(state, c, cStr);
+      return parseFragment;
+    default:
+      return parseSchemeStart;
   }
 }
 
-const parseSchemeStart: Parser = (state, c, cStr) => {
+function continueParse(
+  state: URLParseState,
+  pointer: number,
+  c: number | undefined
+): boolean {
+  state.pointer += state.pointer === pointer ? codePointSize(c) : 1;
+  return state.pointer <= state.input.length;
+}
+
+function codePointAt(input: string, pointer: number): number | undefined {
+  return pointer < input.length ? input.codePointAt(pointer) : undefined;
+}
+
+function codePointSize(c: number | undefined): number {
+  return c != null && c > 0xffff ? 2 : 1;
+}
+
+function codePointToString(c: number | undefined): string {
+  if (c == null) return '';
+  return c <= 0xffff ? String.fromCharCode(c) : String.fromCodePoint(c);
+}
+
+function asciiLowercaseCodePointToString(c: number): string {
+  return String.fromCharCode(c >= 0x41 && c <= 0x5a ? c + 0x20 : c);
+}
+
+const parseSchemeStart: Parser = (state, c) => {
+  const start = state.pointer;
   if (
     c != null &&
     ((c >= 0x41 && c <= 0x5a) /*A-Z*/ || (c >= 0x61 && c <= 0x7a)) /*a-z*/
   ) {
-    state.buffer += cStr.toLowerCase();
-    return URLParseMode.Scheme;
+    let pointer = state.pointer;
+    do {
+      state.buffer += asciiLowercaseCodePointToString(c);
+      pointer += codePointSize(c);
+      c = codePointAt(state.input, pointer);
+    } while (
+      c != null &&
+      (c === 43 /*'+'*/ ||
+        c === 45 /*'-'*/ ||
+        c === 46 /*'.'*/ ||
+        (c >= 0x41 && c <= 0x5a) /*A-Z*/ ||
+        (c >= 0x61 && c <= 0x7a) /*a-z*/ ||
+        (c >= 0x30 && c <= 0x39)) /*0-9*/
+    );
+    state.pointer = pointer;
+    return parseScheme(state, c);
   } else if (!state.initialMode) {
     --state.pointer;
-    return URLParseMode.NoScheme;
+    return continueParse(state, start, c)
+      ? parseNoScheme(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     return URLParseMode.Failure;
   }
 };
 
-const parseScheme: Parser = (state, c, cStr) => {
+const parseScheme: Parser = (state, c) => {
+  const start = state.pointer;
   if (
     c != null &&
     (c === 43 /*'+'*/ ||
@@ -433,8 +443,10 @@ const parseScheme: Parser = (state, c, cStr) => {
       (c >= 0x61 && c <= 0x7a) /*a-z*/ ||
       (c >= 0x30 && c <= 0x39)) /*0-9*/
   ) {
-    state.buffer += cStr.toLowerCase();
-    return URLParseMode.Scheme;
+    state.buffer += asciiLowercaseCodePointToString(c);
+    return continueParse(state, start, c)
+      ? parseScheme(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (c === 58 /*':'*/) {
     if (state.initialMode) {
       if (isSpecial(state.url.scheme) !== isSpecial(state.buffer)) {
@@ -458,33 +470,52 @@ const parseScheme: Parser = (state, c, cStr) => {
 
     state.buffer = '';
     if (state.url.scheme === 'file') {
-      return URLParseMode.File;
+      return continueParse(state, start, c)
+        ? parseFile(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (
       isSpecial(state.url.scheme) &&
       state.base !== null &&
       state.base.scheme === state.url.scheme
     ) {
-      return URLParseMode.SpecialRelativeOrAuthority;
+      return continueParse(state, start, c)
+        ? parseSpecialRelativeOrAuthority(
+            state,
+            codePointAt(state.input, state.pointer)
+          )
+        : URLParseMode.Success;
     } else if (isSpecial(state.url.scheme)) {
-      return URLParseMode.SpecialAuthoritySlashes;
-    } else if (state.input[state.pointer + 1] === 47 /*'/'*/) {
+      return continueParse(state, start, c)
+        ? parseSpecialAuthoritySlashes(
+            state,
+            codePointAt(state.input, state.pointer)
+          )
+        : URLParseMode.Success;
+    } else if (codePointAt(state.input, state.pointer + 1) === 47 /*'/'*/) {
       state.pointer++;
-      return URLParseMode.PathOrAuthority;
+      return continueParse(state, start, c)
+        ? parsePathOrAuthority(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else {
       state.url.path = [''];
       state.url.opaquePath = true;
-      return URLParseMode.OpaquePath;
+      return continueParse(state, start, c)
+        ? parseOpaquePath(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     }
   } else if (!state.initialMode) {
     state.buffer = '';
     state.pointer = -1;
-    return URLParseMode.NoScheme;
+    return continueParse(state, start, c)
+      ? parseNoScheme(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     return URLParseMode.Failure;
   }
 };
 
-const parseNoScheme: Parser = (state, c, _cStr) => {
+const parseNoScheme: Parser = (state, c) => {
+  const start = state.pointer;
   if (state.base === null || (state.base.opaquePath && c !== 35) /*'#'*/) {
     return URLParseMode.Failure;
   } else if (state.base.opaquePath && c === 35 /*'#'*/) {
@@ -493,41 +524,68 @@ const parseNoScheme: Parser = (state, c, _cStr) => {
     state.url.opaquePath = state.base.opaquePath;
     state.url.query = state.base.query;
     state.url.fragment = '';
-    return URLParseMode.Fragment;
+    return continueParse(state, start, c)
+      ? parseFragment(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (state.base.scheme === 'file') {
     state.pointer--;
-    return URLParseMode.File;
+    return continueParse(state, start, c)
+      ? parseFile(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     state.pointer--;
-    return URLParseMode.Relative;
+    return continueParse(state, start, c)
+      ? parseRelative(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseSpecialRelativeOrAuthority: Parser = (state, c, _cStr) => {
-  if (c === 47 /*'/'*/ && state.input[state.pointer + 1] === 47 /*'/'*/) {
+const parseSpecialRelativeOrAuthority: Parser = (state, c) => {
+  const start = state.pointer;
+  if (
+    c === 47 /*'/'*/ &&
+    codePointAt(state.input, state.pointer + 1) === 47 /*'/'*/
+  ) {
     ++state.pointer;
-    return URLParseMode.SpecialAuthorityIgnoreSlashes;
+    return continueParse(state, start, c)
+      ? parseSpecialAuthorityIgnoreSlashes(
+          state,
+          codePointAt(state.input, state.pointer)
+        )
+      : URLParseMode.Success;
   } else {
     state.pointer--;
-    return URLParseMode.Relative;
+    return continueParse(state, start, c)
+      ? parseRelative(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parsePathOrAuthority: Parser = (state, c, _cStr) => {
+const parsePathOrAuthority: Parser = (state, c) => {
+  const start = state.pointer;
   if (c === 47 /*'/'*/) {
-    return URLParseMode.Authority;
+    return continueParse(state, start, c)
+      ? parseAuthority(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     state.pointer--;
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseRelative: Parser = (state, c, _cStr) => {
+const parseRelative: Parser = (state, c) => {
+  const start = state.pointer;
   state.url.scheme = state.base!.scheme;
   if (c === 47 /*'/'*/) {
-    return URLParseMode.RelativeSlash;
+    return continueParse(state, start, c)
+      ? parseRelativeSlash(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (isSpecial(state.url.scheme) && c === 92 /*'\\'*/) {
-    return URLParseMode.RelativeSlash;
+    return continueParse(state, start, c)
+      ? parseRelativeSlash(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     state.url.username = state.base!.username;
     state.url.password = state.base!.password;
@@ -537,60 +595,125 @@ const parseRelative: Parser = (state, c, _cStr) => {
     state.url.query = state.base!.query;
     if (c === 63 /*'?'*/) {
       state.url.query = '';
-      return URLParseMode.Query;
+      return continueParse(state, start, c)
+        ? parseQuery(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (c === 35 /*'#'*/) {
       state.url.fragment = '';
-      return URLParseMode.Fragment;
+      return continueParse(state, start, c)
+        ? parseFragment(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (c != null) {
       state.url.query = null;
       state.url.path.pop();
       state.pointer--;
-      return URLParseMode.Path;
+      return continueParse(state, start, c)
+        ? parsePath(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else {
-      return URLParseMode.Relative;
+      return continueParse(state, start, c)
+        ? parseRelative(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     }
   }
 };
 
-const parseRelativeSlash: Parser = (state, c, _cStr) => {
+const parseRelativeSlash: Parser = (state, c) => {
+  const start = state.pointer;
   if (isSpecial(state.url.scheme) && (c === 47 /*'/'*/ || c === 92) /*'\\'*/) {
-    return URLParseMode.SpecialAuthorityIgnoreSlashes;
+    return continueParse(state, start, c)
+      ? parseSpecialAuthorityIgnoreSlashes(
+          state,
+          codePointAt(state.input, state.pointer)
+        )
+      : URLParseMode.Success;
   } else if (c === 47 /*'/'*/) {
-    return URLParseMode.Authority;
+    return continueParse(state, start, c)
+      ? parseAuthority(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     state.url.username = state.base!.username;
     state.url.password = state.base!.password;
     state.url.host = state.base!.host;
     state.url.port = state.base!.port;
     state.pointer--;
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseSpecialAuthoritySlashes: Parser = (state, c, _cStr) => {
-  if (c === 47 /*'/'*/ && state.input[state.pointer + 1] === 47 /*'/'*/) {
+const parseSpecialAuthoritySlashes: Parser = (state, c) => {
+  const start = state.pointer;
+  if (
+    c === 47 /*'/'*/ &&
+    codePointAt(state.input, state.pointer + 1) === 47 /*'/'*/
+  ) {
     state.pointer++;
   } else {
     state.pointer--;
   }
-  return URLParseMode.SpecialAuthorityIgnoreSlashes;
+  return continueParse(state, start, c)
+    ? parseSpecialAuthorityIgnoreSlashes(
+        state,
+        codePointAt(state.input, state.pointer)
+      )
+    : URLParseMode.Success;
 };
 
-const parseSpecialAuthorityIgnoreSlashes: Parser = (state, c, _cStr) => {
+const parseSpecialAuthorityIgnoreSlashes: Parser = (state, c) => {
+  const start = state.pointer;
   if (c !== 47 /*'/*/ && c !== 92 /*'\\'*/) {
     state.pointer--;
-    return URLParseMode.Authority;
+    return continueParse(state, start, c)
+      ? parseAuthority(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
-    return URLParseMode.SpecialAuthorityIgnoreSlashes;
+    return continueParse(state, start, c)
+      ? parseSpecialAuthorityIgnoreSlashes(
+          state,
+          codePointAt(state.input, state.pointer)
+        )
+      : URLParseMode.Success;
   }
 };
 
-const parseAuthority: Parser = (state, c, cStr) => {
+const parseAuthority: Parser = (state, c) => {
+  const start = state.pointer;
+  if (
+    c != null &&
+    c !== 64 /*'@'*/ &&
+    c !== 35 /*'#'*/ &&
+    c !== 47 /*'/'*/ &&
+    c !== 63 /*'?'*/ &&
+    !(c === 92 /*'\\'*/ && isSpecial(state.url.scheme))
+  ) {
+    let end = state.pointer + codePointSize(c);
+    while (end < state.input.length) {
+      const next = codePointAt(state.input, end);
+      if (
+        next == null ||
+        next === 64 /*'@'*/ ||
+        next === 35 /*'#'*/ ||
+        next === 47 /*'/'*/ ||
+        next === 63 /*'?'*/ ||
+        (next === 92 /*'\\'*/ && isSpecial(state.url.scheme))
+      ) {
+        break;
+      }
+      end += codePointSize(next);
+    }
+    state.buffer += state.input.slice(state.pointer, end);
+    state.pointer = end - 1;
+    return continueParse(state, start, c)
+      ? parseAuthority(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
+  }
+
   if (c === 64 /*'@'*/) {
     if (state.atSignSeen) state.buffer = `%40${state.buffer}`;
     state.atSignSeen = true;
-    const bufferCodePoints = Array.from(state.buffer, c => c.codePointAt(0));
-    for (let idx = 0; idx < bufferCodePoints.length; idx++) {
+    for (let idx = 0; idx < state.buffer.length; idx++) {
       const codePoint = state.buffer.codePointAt(idx);
       if (codePoint === 58 /*':'*/ && !state.passwordTokenSeen) {
         state.passwordTokenSeen = true;
@@ -605,9 +728,12 @@ const parseAuthority: Parser = (state, c, cStr) => {
       } else {
         state.url.username += encodedCodePoints;
       }
+      if (codePoint != null && codePoint > 0xffff) idx++;
     }
     state.buffer = '';
-    return URLParseMode.Authority;
+    return continueParse(state, start, c)
+      ? parseAuthority(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (
     c == null ||
     c === 35 /*'#'*/ ||
@@ -618,19 +744,60 @@ const parseAuthority: Parser = (state, c, cStr) => {
     if (state.atSignSeen && state.buffer === '') {
       return URLParseMode.Failure;
     }
-    state.pointer -= [...state.buffer].length + 1;
+    state.pointer -= state.buffer.length + 1;
     state.buffer = '';
-    return URLParseMode.Hostname;
+    return continueParse(state, start, c)
+      ? parseHostname(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
-    state.buffer += cStr;
-    return URLParseMode.Authority;
+    state.buffer += codePointToString(c);
+    return continueParse(state, start, c)
+      ? parseAuthority(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseHostname: Parser = (state, c, cStr) => {
+const parseHostname: Parser = (state, c) => {
+  const start = state.pointer;
   if (state.initialMode && state.url.scheme === 'file') {
     state.pointer--;
-    return URLParseMode.FileHost;
+    return continueParse(state, start, c)
+      ? parseFileHost(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
+  } else if (
+    c != null &&
+    c !== 58 /*':'*/ &&
+    c !== 35 /*'#'*/ &&
+    c !== 47 /*'/'*/ &&
+    c !== 63 /*'?'*/ &&
+    !(c === 92 /*'\\'*/ && isSpecial(state.url.scheme))
+  ) {
+    let end = state.pointer + codePointSize(c);
+    if (c === 91 /*'['*/) state.insideBrackets = true;
+    else if (c === 93 /*']'*/) state.insideBrackets = false;
+
+    while (end < state.input.length) {
+      const next = codePointAt(state.input, end);
+      if (
+        next == null ||
+        (!state.insideBrackets && next === 58) /*':'*/ ||
+        next === 35 /*'#'*/ ||
+        next === 47 /*'/'*/ ||
+        next === 63 /*'?'*/ ||
+        (next === 92 /*'\\'*/ && isSpecial(state.url.scheme))
+      ) {
+        break;
+      }
+      if (next === 91 /*'['*/) state.insideBrackets = true;
+      else if (next === 93 /*']'*/) state.insideBrackets = false;
+      end += codePointSize(next);
+    }
+
+    state.buffer += state.input.slice(state.pointer, end);
+    state.pointer = end - 1;
+    return continueParse(state, start, c)
+      ? parseHostname(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (c === 58 /*':'*/ && !state.insideBrackets) {
     if (state.buffer === '') {
       return URLParseMode.Failure;
@@ -647,7 +814,9 @@ const parseHostname: Parser = (state, c, cStr) => {
 
     state.url.host = serializeHost(host);
     state.buffer = '';
-    return URLParseMode.Port;
+    return continueParse(state, start, c)
+      ? parsePort(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (
     c == null ||
     c === 35 /*'#'*/ ||
@@ -673,22 +842,33 @@ const parseHostname: Parser = (state, c, cStr) => {
 
     state.url.host = serializeHost(host);
     state.buffer = '';
-    return state.initialMode ? URLParseMode.Success : URLParseMode.PathStart;
+    return state.initialMode
+      ? URLParseMode.Success
+      : continueParse(state, start, c)
+        ? parsePathStart(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
   } else {
-    if (c === 91 /*'['*/) {
-      state.insideBrackets = true;
-    } else if (c === 93 /*']'*/) {
-      state.insideBrackets = false;
-    }
-    state.buffer += cStr;
-    return URLParseMode.Hostname;
+    state.buffer += codePointToString(c);
+    return continueParse(state, start, c)
+      ? parseHostname(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parsePort: Parser = (state, c, cStr) => {
+const parsePort: Parser = (state, c) => {
+  const start = state.pointer;
   if (c != null && c >= 0x30 && c <= 0x39 /*0-9*/) {
-    state.buffer += cStr;
-    return URLParseMode.Port;
+    let end = state.pointer + 1;
+    while (end < state.input.length) {
+      const next = state.input.charCodeAt(end);
+      if (next < 0x30 || next > 0x39) break;
+      end++;
+    }
+    state.buffer += state.input.slice(state.pointer, end);
+    state.pointer = end - 1;
+    return continueParse(state, start, c)
+      ? parsePort(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (
     state.initialMode ||
     c == null ||
@@ -712,29 +892,28 @@ const parsePort: Parser = (state, c, cStr) => {
       return URLParseMode.Failure;
     } else {
       state.pointer--;
-      return URLParseMode.PathStart;
+      return continueParse(state, start, c)
+        ? parsePathStart(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     }
   } else {
     return URLParseMode.Failure;
   }
 };
 
-function startsWithWindowsDriveLetter(
-  input: (number | undefined)[],
-  pointer: number
-): boolean {
+function startsWithWindowsDriveLetter(input: string, pointer: number): boolean {
   const length = input.length - pointer;
   if (length < 2) {
     return false;
   }
-  const c0 = input[pointer]!;
-  const c1 = input[pointer + 1]!;
+  const c0 = codePointAt(input, pointer)!;
+  const c1 = codePointAt(input, pointer + 1)!;
   if (!isWindowsDriveLetterCodePoints(c0, c1)) {
     return false;
   } else if (length === 2) {
     return true;
   } else {
-    const c2 = input[pointer + 2];
+    const c2 = codePointAt(input, pointer + 2);
     return (
       c2 === 47 /*'/'*/ ||
       c2 === 92 /*'\\'*/ ||
@@ -744,11 +923,14 @@ function startsWithWindowsDriveLetter(
   }
 }
 
-const parseFile: Parser = (state, c, _cStr) => {
+const parseFile: Parser = (state, c) => {
+  const start = state.pointer;
   state.url.scheme = 'file';
   state.url.host = '';
   if (c === 47 /*'/'*/ || c === 92 /*'\\'*/) {
-    return URLParseMode.FileSlash;
+    return continueParse(state, start, c)
+      ? parseFileSlash(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (state.base?.scheme === 'file') {
     state.url.host = state.base.host;
     state.url.path = state.base.path.slice();
@@ -756,10 +938,14 @@ const parseFile: Parser = (state, c, _cStr) => {
     state.url.query = state.base.query;
     if (c === 63 /*'?'*/) {
       state.url.query = '';
-      return URLParseMode.Query;
+      return continueParse(state, start, c)
+        ? parseQuery(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (c === 35 /*'#'*/) {
       state.url.fragment = '';
-      return URLParseMode.Fragment;
+      return continueParse(state, start, c)
+        ? parseFragment(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (c != null) {
       state.url.query = null;
       if (!startsWithWindowsDriveLetter(state.input, state.pointer)) {
@@ -768,19 +954,28 @@ const parseFile: Parser = (state, c, _cStr) => {
         state.url.path = [];
       }
       state.pointer--;
-      return URLParseMode.Path;
+      return continueParse(state, start, c)
+        ? parsePath(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else {
-      return URLParseMode.File;
+      return continueParse(state, start, c)
+        ? parseFile(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     }
   } else {
     state.pointer--;
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseFileSlash: Parser = (state, c, _cStr) => {
+const parseFileSlash: Parser = (state, c) => {
+  const start = state.pointer;
   if (c === 47 /*'/'*/ || c === 92 /*'\\'*/) {
-    return URLParseMode.FileHost;
+    return continueParse(state, start, c)
+      ? parseFileHost(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     if (state.base !== null && state.base.scheme === 'file') {
       if (
@@ -792,12 +987,41 @@ const parseFileSlash: Parser = (state, c, _cStr) => {
       state.url.host = state.base.host;
     }
     state.pointer--;
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseFileHost: Parser = (state, c, cStr) => {
+const parseFileHost: Parser = (state, c) => {
+  const start = state.pointer;
   if (
+    c != null &&
+    c !== 47 /*'/'*/ &&
+    c !== 92 /*'\\'*/ &&
+    c !== 63 /*'?'*/ &&
+    c !== 35 /*'#'*/
+  ) {
+    let end = state.pointer + codePointSize(c);
+    while (end < state.input.length) {
+      const next = codePointAt(state.input, end);
+      if (
+        next == null ||
+        next === 47 /*'/'*/ ||
+        next === 92 /*'\\'*/ ||
+        next === 63 /*'?'*/ ||
+        next === 35 /*'#'*/
+      ) {
+        break;
+      }
+      end += codePointSize(next);
+    }
+    state.buffer += state.input.slice(state.pointer, end);
+    state.pointer = end - 1;
+    return continueParse(state, start, c)
+      ? parseFileHost(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
+  } else if (
     c == null ||
     c === 47 /*'/'*/ ||
     c === 92 /*'\\'*/ ||
@@ -806,10 +1030,16 @@ const parseFileHost: Parser = (state, c, cStr) => {
   ) {
     state.pointer--;
     if (!state.initialMode && isWindowsDriveLetterString(state.buffer)) {
-      return URLParseMode.Path;
+      return continueParse(state, start, c)
+        ? parsePath(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (state.buffer === '') {
       state.url.host = '';
-      return state.initialMode ? URLParseMode.Success : URLParseMode.PathStart;
+      return state.initialMode
+        ? URLParseMode.Success
+        : continueParse(state, start, c)
+          ? parsePathStart(state, codePointAt(state.input, state.pointer))
+          : URLParseMode.Success;
     } else {
       let host = parseHost(state.buffer, !isSpecial(state.url.scheme));
       if (host === null) {
@@ -820,38 +1050,81 @@ const parseFileHost: Parser = (state, c, cStr) => {
       }
       state.url.host = serializeHost(host);
       state.buffer = '';
-      return state.initialMode ? URLParseMode.Success : URLParseMode.PathStart;
+      return state.initialMode
+        ? URLParseMode.Success
+        : continueParse(state, start, c)
+          ? parsePathStart(state, codePointAt(state.input, state.pointer))
+          : URLParseMode.Success;
     }
-  } else {
-    state.buffer += cStr;
-    return URLParseMode.FileHost;
   }
+  return URLParseMode.Failure;
 };
 
-const parsePathStart: Parser = (state, c, _cStr) => {
+const parsePathStart: Parser = (state, c) => {
+  const start = state.pointer;
   if (isSpecial(state.url.scheme)) {
     if (c !== 92 /*'\\'*/ && c !== 47 /*'/'*/) {
       state.pointer--;
     }
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (!state.initialMode && c === 63 /*'?'*/) {
     state.url.query = '';
-    return URLParseMode.Query;
+    return continueParse(state, start, c)
+      ? parseQuery(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (!state.initialMode && c === 35 /*'#'*/) {
     state.url.fragment = '';
-    return URLParseMode.Fragment;
+    return continueParse(state, start, c)
+      ? parseFragment(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (c != null) {
     if (c !== 47 /*'/'*/) state.pointer--;
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (state.initialMode && state.url.host === null) {
     state.url.path.push('');
-    return URLParseMode.PathStart;
+    return continueParse(state, start, c)
+      ? parsePathStart(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
-    return URLParseMode.PathStart;
+    return continueParse(state, start, c)
+      ? parsePathStart(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parsePath: Parser = (state, c, _cStr) => {
+const parsePath: Parser = (state, c) => {
+  const start = state.pointer;
+  if (
+    c != null &&
+    c !== 47 /*'/'*/ &&
+    !(isSpecial(state.url.scheme) && c === 92) /*'\\'*/ &&
+    (state.initialMode || (c !== 63 /*'?'*/ && c !== 35)) /*'#'*/
+  ) {
+    let end = state.pointer + codePointSize(c);
+    while (end < state.input.length) {
+      const next = codePointAt(state.input, end);
+      if (
+        next == null ||
+        next === 47 /*'/'*/ ||
+        (isSpecial(state.url.scheme) && next === 92) /*'\\'*/ ||
+        (!state.initialMode && (next === 63 /*'?'*/ || next === 35)) /*'#'*/
+      ) {
+        break;
+      }
+      end += codePointSize(next);
+    }
+    state.buffer += utf8PercentEncodeString(
+      state.input.slice(state.pointer, end),
+      isPathPercentEncode
+    );
+    state.pointer = end;
+    c = codePointAt(state.input, end);
+  }
+
   if (
     c == null ||
     c === 47 /*'/'*/ ||
@@ -880,75 +1153,126 @@ const parsePath: Parser = (state, c, _cStr) => {
     state.buffer = '';
     if (c === 63 /*'?'*/) {
       state.url.query = '';
-      return URLParseMode.Query;
+      return continueParse(state, start, c)
+        ? parseQuery(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else if (c === 35 /*'#'*/) {
       state.url.fragment = '';
-      return URLParseMode.Fragment;
+      return continueParse(state, start, c)
+        ? parseFragment(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     } else {
-      return URLParseMode.Path;
+      return continueParse(state, start, c)
+        ? parsePath(state, codePointAt(state.input, state.pointer))
+        : URLParseMode.Success;
     }
   } else {
     state.buffer += utf8PercentEncodeCodePoint(c, isPathPercentEncode);
-    return URLParseMode.Path;
+    return continueParse(state, start, c)
+      ? parsePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
 
-const parseOpaquePath: Parser = (state, c, _cStr) => {
+const parseOpaquePath: Parser = (state, c) => {
+  const start = state.pointer;
   if (c === 63 /*'?'*/) {
     state.url.query = '';
-    return URLParseMode.Query;
+    return continueParse(state, start, c)
+      ? parseQuery(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else if (c === 35 /*'#'*/) {
     state.url.fragment = '';
-    return URLParseMode.Fragment;
-  } else if (c === 32 /*' '*/) {
-    const remaining = state.input[state.pointer + 1];
-    if (remaining === 63 /*'?'*/ || remaining === 35 /*'#'*/) {
-      state.url.path[0] += '%20';
-    } else {
-      state.url.path[0] += ' ';
-    }
-    return URLParseMode.OpaquePath;
+    return continueParse(state, start, c)
+      ? parseFragment(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   } else {
     if (c != null) {
-      state.url.path[0] += utf8PercentEncodeCodePoint(
-        c,
-        isC0ControlPercentEncode
-      );
+      let end = state.pointer + codePointSize(c);
+      while (end < state.input.length) {
+        const next = codePointAt(state.input, end);
+        if (next === 63 /*'?'*/ || next === 35 /*'#'*/) break;
+        end += codePointSize(next);
+      }
+
+      const segment = state.input.slice(state.pointer, end);
+      if (
+        end < state.input.length &&
+        segment.charCodeAt(segment.length - 1) === 32 /*' '*/
+      ) {
+        state.url.path[0] +=
+          utf8PercentEncodeString(
+            segment.slice(0, -1),
+            isC0ControlPercentEncode
+          ) + '%20';
+      } else {
+        state.url.path[0] += utf8PercentEncodeString(
+          segment,
+          isC0ControlPercentEncode
+        );
+      }
+
+      state.pointer = end;
+      c = codePointAt(state.input, end);
+      if (c === 63 /*'?'*/) {
+        state.url.query = '';
+        return continueParse(state, start, c)
+          ? parseQuery(state, codePointAt(state.input, state.pointer))
+          : URLParseMode.Success;
+      } else if (c === 35 /*'#'*/) {
+        state.url.fragment = '';
+        return continueParse(state, start, c)
+          ? parseFragment(state, codePointAt(state.input, state.pointer))
+          : URLParseMode.Success;
+      }
     }
-    return URLParseMode.OpaquePath;
+    return continueParse(state, start, c)
+      ? parseOpaquePath(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
   }
 };
-
-const parseQuery: Parser = (state, c, cStr) => {
-  if (c == null || (!state.initialMode && c === 35) /*'#'*/) {
+const parseQuery: Parser = (state, c) => {
+  const start = state.pointer;
+  let end = state.pointer;
+  if (c != null) {
+    if (!state.initialMode) {
+      const fragmentIdx = state.input.indexOf('#', state.pointer);
+      end = fragmentIdx === -1 ? state.input.length : fragmentIdx;
+    } else {
+      end = state.input.length;
+    }
     const queryPercentEncodePredicate = isSpecial(state.url.scheme)
       ? isSpecialQueryPercentEncode
       : isQueryPercentEncode;
     state.url.query += utf8PercentEncodeString(
-      state.buffer,
+      state.input.slice(state.pointer, end),
       queryPercentEncodePredicate
     );
-    state.buffer = '';
-    if (c === 35 /*'#'*/) {
-      state.url.fragment = '';
-      return URLParseMode.Fragment;
-    } else {
-      return URLParseMode.Query;
-    }
-  } else {
-    state.buffer += cStr;
-    return URLParseMode.Query;
   }
+  state.pointer = end;
+  if (codePointAt(state.input, end) === 35 /*'#'*/ && !state.initialMode) {
+    state.url.fragment = '';
+    return continueParse(state, start, c)
+      ? parseFragment(state, codePointAt(state.input, state.pointer))
+      : URLParseMode.Success;
+  }
+  return continueParse(state, start, c)
+    ? parseQuery(state, codePointAt(state.input, state.pointer))
+    : URLParseMode.Success;
 };
 
-const parseFragment: Parser = (state, c, _cStr) => {
+const parseFragment: Parser = (state, c) => {
+  const start = state.pointer;
   if (c != null) {
-    state.url.fragment += utf8PercentEncodeCodePoint(
-      c,
+    state.url.fragment += utf8PercentEncodeString(
+      state.input.slice(state.pointer),
       isFragmentPercentEncode
     );
+    state.pointer = state.input.length;
   }
-  return URLParseMode.Fragment;
+  return continueParse(state, start, c)
+    ? parseFragment(state, codePointAt(state.input, state.pointer))
+    : URLParseMode.Success;
 };
 
 export function serializeURL(
