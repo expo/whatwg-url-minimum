@@ -1,11 +1,6 @@
 // See: https://github.com/jsdom/whatwg-url/blob/v15.1.0/lib/encoding.js
 
-const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder('utf-8', { ignoreBOM: true });
-
-export function utf8Encode(string: string): Uint8Array {
-  return utf8Encoder.encode(string);
-}
 
 export function utf8Decode(bytes: Uint8Array): string {
   return utf8Decoder.decode(bytes);
@@ -66,32 +61,62 @@ export function decodeHexDigit(c: number): number {
   }
 }
 
-// https://url.spec.whatwg.org/#percent-decode
-export function percentDecodeBytes(input: Uint8Array): Uint8Array {
-  const output = new Uint8Array(input.byteLength);
-  let outputIndex = 0;
-  for (let i = 0; i < input.byteLength; ++i) {
-    const byte = input[i];
-    if (byte !== 0x25 /*'%'*/) {
-      output[outputIndex++] = byte;
-    } else {
-      const hi = decodeHexDigit(input[i + 1]);
-      const lo = decodeHexDigit(input[i + 2]);
-      if (hi >= 0 && lo >= 0) {
-        output[outputIndex++] = (hi << 4) | lo;
-        i += 2;
-      } else {
-        output[outputIndex++] = byte;
-      }
+// https://url.spec.whatwg.org/#string-percent-decode
+export function percentDecodeString(
+  input: string,
+  spaceAsPlus = false
+): string {
+  let idx = 0;
+  for (; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    if (c >= 0x80 || c === 37 /*'%'*/ || (spaceAsPlus && c === 43) /*'+'*/) {
+      break;
     }
   }
-  return output.slice(0, outputIndex);
-}
+  if (idx === input.length) return input;
 
-// https://url.spec.whatwg.org/#string-percent-decode
-export function percentDecodeString(input: string): Uint8Array {
-  const bytes = utf8Encode(input);
-  return percentDecodeBytes(bytes);
+  const prefix = input.slice(0, idx);
+  const bytes = new Uint8Array(input.length * 4);
+  let byteIdx = 0;
+  for (let c: number; idx < input.length; idx++) {
+    c = input.charCodeAt(idx);
+    if (c === 37 /*'%'*/) {
+      const hi = decodeHexDigit(input.charCodeAt(idx + 1));
+      const lo = decodeHexDigit(input.charCodeAt(idx + 2));
+      if (hi >= 0 && lo >= 0) {
+        bytes[byteIdx++] = (hi << 4) | lo;
+        idx += 2;
+        continue;
+      }
+    } else if (spaceAsPlus && c === 43 /*'+'*/) {
+      c = 32 /*' '*/;
+    } else if (c >= 0xd800 && c <= 0xdbff && idx + 1 < input.length) {
+      const next = input.charCodeAt(idx + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        c = ((c - 0xd800) << 10) + next - 0xdc00 + 0x10000;
+        idx++;
+      }
+    } else if (c >= 0xdc00 && c <= 0xdfff) {
+      c = 0xfffd;
+    }
+
+    if (c <= 0x7f) {
+      bytes[byteIdx++] = c;
+    } else if (c <= 0x7ff) {
+      bytes[byteIdx++] = 0xc0 | (c >> 6);
+      bytes[byteIdx++] = 0x80 | (c & 0x3f);
+    } else if (c <= 0xffff) {
+      bytes[byteIdx++] = 0xe0 | (c >> 12);
+      bytes[byteIdx++] = 0x80 | ((c >> 6) & 0x3f);
+      bytes[byteIdx++] = 0x80 | (c & 0x3f);
+    } else {
+      bytes[byteIdx++] = 0xf0 | (c >> 18);
+      bytes[byteIdx++] = 0x80 | ((c >> 12) & 0x3f);
+      bytes[byteIdx++] = 0x80 | ((c >> 6) & 0x3f);
+      bytes[byteIdx++] = 0x80 | (c & 0x3f);
+    }
+  }
+  return prefix + utf8Decode(bytes.subarray(0, byteIdx));
 }
 
 // https://url.spec.whatwg.org/#c0-control-percent-encode-set
@@ -241,48 +266,6 @@ export function utf8PercentEncodeString(
 }
 
 // https://url.spec.whatwg.org/#concept-urlencoded-parser
-function parseUrlencodedComponent(input: string): string {
-  let hasPercent = false;
-  let output = '';
-  for (let idx = 0; idx < input.length; idx++) {
-    const c = input.charCodeAt(idx);
-    if (c === 43 /*'+'*/) {
-      output += ' ';
-    } else {
-      if (c === 37 /*'%'*/) hasPercent = true;
-      output += input[idx];
-    }
-  }
-  if (!hasPercent) return output;
-
-  let byteIdx = 0;
-  let hasNonASCIIByte = false;
-  const bytes = new Uint8Array(output.length);
-  for (let idx = 0; idx < output.length; idx++) {
-    const c = output.charCodeAt(idx);
-    if (c === 37 /*'%'*/) {
-      const hi = decodeHexDigit(output.charCodeAt(idx + 1));
-      const lo = decodeHexDigit(output.charCodeAt(idx + 2));
-      if (hi >= 0 && lo >= 0) {
-        const byte = (hi << 4) | lo;
-        bytes[byteIdx++] = byte;
-        if (byte >= 0x80) hasNonASCIIByte = true;
-        idx += 2;
-        continue;
-      }
-    }
-    bytes[byteIdx++] = c;
-  }
-
-  if (hasNonASCIIByte) return utf8Decode(bytes.subarray(0, byteIdx));
-
-  let decoded = '';
-  for (let idx = 0; idx < byteIdx; idx++) {
-    decoded += String.fromCharCode(bytes[idx]);
-  }
-  return decoded;
-}
-
 export function parseUrlencoded(input: string): [string, string][] {
   const entries: [string, string][] = [];
   let lastIdx = 0;
@@ -295,8 +278,8 @@ export function parseUrlencoded(input: string): [string, string][] {
       let equalIdx = part.indexOf('=');
       if (equalIdx < 0) equalIdx = part.length;
       entries.push([
-        parseUrlencodedComponent(part.slice(0, equalIdx)),
-        parseUrlencodedComponent(part.slice(equalIdx + 1)),
+        percentDecodeString(part.slice(0, equalIdx), true),
+        percentDecodeString(part.slice(equalIdx + 1), true),
       ]);
     }
     lastIdx = idx + 1;
