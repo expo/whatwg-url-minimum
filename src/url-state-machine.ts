@@ -131,7 +131,10 @@ function parseHost(input: string, isOpaque: boolean) {
     return parseOpaqueHost(input);
   } else {
     // TODO(@kitten): unicode support has been stripped out until we can move this implementation to native.
-    const domain = utf8Decode(percentDecodeString(input));
+    const domain =
+      input.indexOf('%') === -1
+        ? input
+        : utf8Decode(percentDecodeString(input));
     // NOTE(@kitten): This fixes a bug in whatwg-url-without-unicode where domain isn't normalized to be lowercase
     if (isIPv4(domain)) {
       return parseIPv4(domain);
@@ -177,7 +180,36 @@ function trimControlChars(string: string): string {
 }
 
 function trimTabAndNewline(url: string): string {
-  return url.replace(/\u0009|\u000A|\u000D/gu, '');
+  let idx = 0;
+  for (; idx < url.length; idx++) {
+    const c = url.charCodeAt(idx);
+    if (c === 0x09 || c === 0x0a || c === 0x0d) break;
+  }
+  if (idx === url.length) return url;
+
+  let output = url.slice(0, idx);
+  for (; idx < url.length; idx++) {
+    const c = url.charCodeAt(idx);
+    if (c !== 0x09 && c !== 0x0a && c !== 0x0d) output += url[idx];
+  }
+  return output;
+}
+
+function toCodePoints(input: string): (number | undefined)[] {
+  const output: (number | undefined)[] = [];
+  for (let idx = 0; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    if (c >= 0xd800 && c <= 0xdbff && idx + 1 < input.length) {
+      const next = input.charCodeAt(idx + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        output.push(((c - 0xd800) << 10) + next - 0xdc00 + 0x10000);
+        idx++;
+        continue;
+      }
+    }
+    output.push(c);
+  }
+  return output;
 }
 
 function shortenPath(url: URLAbstract) {
@@ -271,7 +303,7 @@ export function parseURLRaw(
 
   const state: URLParseState = {
     pointer: 0,
-    input: Array.from(input, c => c.codePointAt(0)),
+    input: toCodePoints(input),
     buffer: '',
     base: base || null,
     url: url || {

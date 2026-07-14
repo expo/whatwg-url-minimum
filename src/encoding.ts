@@ -359,6 +359,19 @@ export function serializeUrlencoded(entries: [string, string][]): string {
 }
 
 export function normalizeDomain(domain: string): string | null {
+  let isASCII = true;
+  for (let idx = 0; idx < domain.length; idx++) {
+    const c = domain.charCodeAt(idx);
+    if (c > 0x7f) {
+      isASCII = false;
+      break;
+    }
+    if (c <= 0x20 || c === 0x25 /*'%'*/) {
+      return null;
+    }
+  }
+  if (isASCII) return domain.toLowerCase();
+
   const labels = domain
     .normalize('NFC')
     .replace(/[\u3002\uFF0E\uFF61.]/g, '.')
