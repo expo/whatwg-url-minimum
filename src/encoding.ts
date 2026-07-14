@@ -19,6 +19,40 @@ function percentEncode(c: number): string {
   return hex.length === 1 ? `%0${hex}` : `%${hex}`;
 }
 
+function utf8PercentEncodeScalar(
+  codePoint: number,
+  percentEncodePredicate: (c: number) => boolean,
+  spaceAsPlus = false
+): string {
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+    codePoint = 0xfffd;
+  }
+  if (codePoint <= 0x7f) {
+    if (spaceAsPlus && codePoint === 32 /*' '*/) return '+';
+    return percentEncodePredicate(codePoint)
+      ? percentEncode(codePoint)
+      : String.fromCharCode(codePoint);
+  } else if (codePoint <= 0x7ff) {
+    return (
+      percentEncode(0xc0 | (codePoint >> 6)) +
+      percentEncode(0x80 | (codePoint & 0x3f))
+    );
+  } else if (codePoint <= 0xffff) {
+    return (
+      percentEncode(0xe0 | (codePoint >> 12)) +
+      percentEncode(0x80 | ((codePoint >> 6) & 0x3f)) +
+      percentEncode(0x80 | (codePoint & 0x3f))
+    );
+  } else {
+    return (
+      percentEncode(0xf0 | (codePoint >> 18)) +
+      percentEncode(0x80 | ((codePoint >> 12) & 0x3f)) +
+      percentEncode(0x80 | ((codePoint >> 6) & 0x3f)) +
+      percentEncode(0x80 | (codePoint & 0x3f))
+    );
+  }
+}
+
 export function decodeHexDigit(c: number): number {
   if (c >= 0x30 && c <= 0x39 /*0-9*/) {
     return c - 0x30;
@@ -166,13 +200,8 @@ export function utf8PercentEncodeCodePoint(
   codePoint: number | undefined,
   percentEncodePredicate: (c: number) => boolean
 ): string {
-  const bytes = utf8Encode(String.fromCodePoint(codePoint || 0));
-  let output = '';
-  for (let idx = 0; idx < bytes.length; idx++)
-    output += percentEncodePredicate(bytes[idx])
-      ? percentEncode(bytes[idx])
-      : String.fromCharCode(bytes[idx]);
-  return output;
+  codePoint = codePoint || 0;
+  return utf8PercentEncodeScalar(codePoint, percentEncodePredicate);
 }
 
 // https://url.spec.whatwg.org/#string-percent-encode-after-encoding
@@ -182,16 +211,34 @@ export function utf8PercentEncodeString(
   percentEncodePredicate: (c: number) => boolean,
   spaceAsPlus = false
 ) {
-  const bytes = utf8Encode(input);
   let output = '';
-  for (let idx = 0; idx < bytes.length; idx++) {
-    if (spaceAsPlus && bytes[idx] === 32 /*' '*/) {
+  let idx = 0;
+  for (; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    if (c >= 0x80) break;
+    if (spaceAsPlus && c === 32 /*' '*/) {
       output += '+';
     } else {
-      output += percentEncodePredicate(bytes[idx])
-        ? percentEncode(bytes[idx])
-        : String.fromCharCode(bytes[idx]);
+      output += percentEncodePredicate(c) ? percentEncode(c) : input[idx];
     }
+  }
+  if (idx === input.length) return output;
+
+  for (; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    let codePoint = c;
+    if (c >= 0xd800 && c <= 0xdbff && idx + 1 < input.length) {
+      const next = input.charCodeAt(idx + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        codePoint = ((c - 0xd800) << 10) + next - 0xdc00 + 0x10000;
+        idx++;
+      }
+    }
+    output += utf8PercentEncodeScalar(
+      codePoint,
+      percentEncodePredicate,
+      spaceAsPlus
+    );
   }
   return output;
 }
@@ -297,19 +344,15 @@ export function parseUrlencoded(input: Uint8Array): [string, string][] {
 }
 
 // https://url.spec.whatwg.org/#concept-urlencoded-serializer
+export function serializeUrlencodedComponent(value: string): string {
+  return utf8PercentEncodeString(value, isURLEncodedPercentEncode, true);
+}
+
 export function serializeUrlencoded(entries: [string, string][]): string {
   let output = '';
   for (let idx = 0; idx < entries.length; idx++) {
-    const name = utf8PercentEncodeString(
-      entries[idx][0],
-      isURLEncodedPercentEncode,
-      true
-    );
-    const value = utf8PercentEncodeString(
-      entries[idx][1],
-      isURLEncodedPercentEncode,
-      true
-    );
+    const name = serializeUrlencodedComponent(entries[idx][0]);
+    const value = serializeUrlencodedComponent(entries[idx][1]);
     output += idx !== 0 ? `&${name}=${value}` : `${name}=${value}`;
   }
   return output;

@@ -1,10 +1,9 @@
 import { type URLSearchParamsLike } from './types';
 import { toUSVString, toIterator, toObject, toQueryPair } from './conversions';
 import {
-  isURLEncodedPercentEncode,
   parseUrlencodedString,
   serializeUrlencoded,
-  utf8PercentEncodeString,
+  serializeUrlencodedComponent,
 } from './encoding';
 import {
   type URL,
@@ -60,10 +59,6 @@ function updateInternalURL(internals: URLSearchParamsInternals): void {
     updateURLQuery(internals.url, query || null);
     internals.urlQueryIsSerialized = true;
   }
-}
-
-function serializeComponent(value: string): string {
-  return utf8PercentEncodeString(value, isURLEncodedPercentEncode, true);
 }
 
 const IteratorClass = typeof Iterator !== 'undefined' ? Iterator : Object;
@@ -159,7 +154,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     if (url && internals.urlQueryIsSerialized) {
       appendURLQuery(
         url,
-        `${serializeComponent(name)}=${serializeComponent(value)}`
+        `${serializeUrlencodedComponent(name)}=${serializeUrlencodedComponent(value)}`
       );
     } else if (url) {
       updateInternalURL(internals);
