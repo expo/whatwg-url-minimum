@@ -207,6 +207,70 @@ function replacePlusByteWithSpace(bytes: Uint8Array): Uint8Array {
 }
 
 // https://url.spec.whatwg.org/#concept-urlencoded-parser
+function parseUrlencodedComponent(input: string): string {
+  let hasPercent = false;
+  let output = '';
+  for (let idx = 0; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    if (c === 43 /*'+'*/) {
+      output += ' ';
+    } else {
+      if (c === 37 /*'%'*/) hasPercent = true;
+      output += input[idx];
+    }
+  }
+  if (!hasPercent) return output;
+
+  let byteIdx = 0;
+  let hasNonASCIIByte = false;
+  const bytes = new Uint8Array(output.length);
+  for (let idx = 0; idx < output.length; idx++) {
+    const c = output.charCodeAt(idx);
+    if (c === 37 /*'%'*/) {
+      const hi = decodeHexDigit(output.charCodeAt(idx + 1));
+      const lo = decodeHexDigit(output.charCodeAt(idx + 2));
+      if (hi >= 0 && lo >= 0) {
+        const byte = (hi << 4) | lo;
+        bytes[byteIdx++] = byte;
+        if (byte >= 0x80) hasNonASCIIByte = true;
+        idx += 2;
+        continue;
+      }
+    }
+    bytes[byteIdx++] = c;
+  }
+
+  if (hasNonASCIIByte) return utf8Decode(bytes.subarray(0, byteIdx));
+
+  let decoded = '';
+  for (let idx = 0; idx < byteIdx; idx++) {
+    decoded += String.fromCharCode(bytes[idx]);
+  }
+  return decoded;
+}
+
+export function parseUrlencodedString(input: string): [string, string][] {
+  const entries: [string, string][] = [];
+  let lastIdx = 0;
+  let idx = 0;
+  while (idx <= input.length) {
+    idx = input.indexOf('&', lastIdx);
+    if (idx < 0) idx = input.length;
+    if (idx !== lastIdx) {
+      const part = input.slice(lastIdx, idx);
+      let equalIdx = part.indexOf('=');
+      if (equalIdx < 0) equalIdx = part.length;
+      entries.push([
+        parseUrlencodedComponent(part.slice(0, equalIdx)),
+        parseUrlencodedComponent(part.slice(equalIdx + 1)),
+      ]);
+    }
+    lastIdx = idx + 1;
+    if (idx === input.length) break;
+  }
+  return entries;
+}
+
 export function parseUrlencoded(input: Uint8Array): [string, string][] {
   const entries: [string, string][] = [];
   let lastIdx = 0;

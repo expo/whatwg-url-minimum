@@ -1,7 +1,17 @@
 import { type URLSearchParamsLike } from './types';
 import { toUSVString, toIterator, toObject, toQueryPair } from './conversions';
-import { parseUrlencoded, serializeUrlencoded, utf8Encode } from './encoding';
-import { type URL, updateURLQuery } from './URLImpl';
+import {
+  isURLEncodedPercentEncode,
+  parseUrlencodedString,
+  serializeUrlencoded,
+  utf8PercentEncodeString,
+} from './encoding';
+import {
+  type URL,
+  appendURLQuery,
+  getURLQuery,
+  updateURLQuery,
+} from './URLImpl';
 
 declare class _Iterator<
   T,
@@ -25,8 +35,9 @@ export function createSearchParams(
 ): URLSearchParams {
   const searchParams = new URLSearchParams();
   searchParams[_implSymbol].url = url;
+  searchParams[_implSymbol].urlQueryIsSerialized = query == null;
   if (query) {
-    searchParams[_implSymbol].list = parseUrlencoded(utf8Encode(query));
+    searchParams[_implSymbol].list = parseUrlencodedString(query);
   }
   return searchParams;
 }
@@ -36,17 +47,23 @@ export function updateSearchParams(
   query: string | null
 ): void {
   if (query) {
-    searchParams[_implSymbol].list = parseUrlencoded(utf8Encode(query));
+    searchParams[_implSymbol].list = parseUrlencodedString(query);
   } else {
     searchParams[_implSymbol].list.length = 0;
   }
+  searchParams[_implSymbol].urlQueryIsSerialized = query == null;
 }
 
 function updateInternalURL(internals: URLSearchParamsInternals): void {
   if (internals.url) {
     const query = serializeUrlencoded(internals.list);
     updateURLQuery(internals.url, query || null);
+    internals.urlQueryIsSerialized = true;
   }
+}
+
+function serializeComponent(value: string): string {
+  return utf8PercentEncodeString(value, isURLEncodedPercentEncode, true);
 }
 
 const IteratorClass = typeof Iterator !== 'undefined' ? Iterator : Object;
@@ -93,6 +110,7 @@ class URLSearchParamsIteratorImpl<T>
 interface URLSearchParamsInternals {
   list: [string, string][];
   url: URL | null;
+  urlQueryIsSerialized: boolean;
 }
 
 export class URLSearchParams implements URLSearchParamsLike {
@@ -104,6 +122,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     const internals: URLSearchParamsInternals = (this[_implSymbol] = {
       list: [],
       url: null,
+      urlQueryIsSerialized: true,
     });
     let iterator: Iterator<[string, string]> | undefined;
     if (Array.isArray(init)) {
@@ -123,7 +142,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     } else if (init !== undefined) {
       let asString = toUSVString(init);
       asString = asString[0] === '?' ? asString.substring(1) : asString;
-      internals.list = parseUrlencoded(utf8Encode(asString));
+      internals.list = parseUrlencodedString(asString);
     }
   }
 
@@ -132,8 +151,19 @@ export class URLSearchParams implements URLSearchParamsLike {
   }
 
   append(name: string, value: string): void {
-    this[_implSymbol].list.push([toUSVString(name), toUSVString(value)]);
-    updateInternalURL(this[_implSymbol]);
+    name = toUSVString(name);
+    value = toUSVString(value);
+    this[_implSymbol].list.push([name, value]);
+    const internals = this[_implSymbol];
+    const { url } = internals;
+    if (url && internals.urlQueryIsSerialized) {
+      appendURLQuery(
+        url,
+        `${serializeComponent(name)}=${serializeComponent(value)}`
+      );
+    } else if (url) {
+      updateInternalURL(internals);
+    }
   }
 
   delete(name: string, value?: string): void {
@@ -141,14 +171,23 @@ export class URLSearchParams implements URLSearchParamsLike {
     value = value != null ? toUSVString(value) : undefined;
     const { list } = this[_implSymbol];
     let idx = 0;
+    let didDelete = false;
     while (idx < list.length) {
       if (list[idx][0] === name && (value == null || list[idx][1] === value)) {
         list.splice(idx, 1);
+        didDelete = true;
       } else {
         idx++;
       }
     }
-    updateInternalURL(this[_implSymbol]);
+    const internals = this[_implSymbol];
+    if (
+      didDelete ||
+      (internals.url &&
+        (!internals.urlQueryIsSerialized || getURLQuery(internals.url) === ''))
+    ) {
+      updateInternalURL(internals);
+    }
   }
 
   get(name: string): string | null {
@@ -187,22 +226,30 @@ export class URLSearchParams implements URLSearchParamsLike {
     value = toUSVString(value);
     const { list } = this[_implSymbol];
     let hasEntry = false;
+    let changed = false;
     let idx = 0;
     while (idx < list.length) {
       if (list[idx][0] === name) {
         if (hasEntry) {
           list.splice(idx, 1);
+          changed = true;
         } else {
           hasEntry = true;
-          list[idx][1] = value;
+          if (list[idx][1] !== value) {
+            list[idx][1] = value;
+            changed = true;
+          }
           idx++;
         }
       } else {
         idx++;
       }
     }
-    if (!hasEntry) list.push([name, value]);
-    updateInternalURL(this[_implSymbol]);
+    if (!hasEntry) {
+      list.push([name, value]);
+      changed = true;
+    }
+    if (changed) updateInternalURL(this[_implSymbol]);
   }
 
   sort() {
