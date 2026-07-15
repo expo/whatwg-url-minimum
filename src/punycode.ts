@@ -12,11 +12,7 @@ export function normalizeDomain(domain: string): string | null {
     const label = labels[idx];
     if (label === '') continue;
     if (containsInvalidDomainCodePoint(label)) return null;
-    if (label.startsWith('xn--')) {
-      if (!label.slice(4) || decodePunycode(label.slice(4)) == null) {
-        return null;
-      }
-    } else if (/[^\0-\x7f]/.test(label)) {
+    if (!label.startsWith('xn--') && /[^\0-\x7f]/.test(label)) {
       labels[idx] = `xn--${encodePunycode(label)}`;
     }
   }
@@ -56,10 +52,6 @@ const maxInt = 2147483647;
 
 function digitToBasic(digit: number): string {
   return String.fromCharCode(digit + 22 + 75 * Number(digit < 26));
-}
-
-function basicToDigit(c: number): number {
-  return c < 58 ? c - 22 : c < 91 ? c - 65 : c < 123 ? c - 97 : base;
 }
 
 function adapt(delta: number, points: number, first: boolean): number {
@@ -115,39 +107,4 @@ function encodePunycode(input: string): string {
     n++;
   }
   return output;
-}
-
-function decodePunycode(input: string): string | null {
-  const output: number[] = [];
-  let i = 0;
-  let n = initialN;
-  let bias = initialBias;
-  let basic = input.lastIndexOf('-');
-  if (basic < 0) basic = 0;
-  for (let idx = 0; idx < basic; idx++) {
-    const c = input.charCodeAt(idx);
-    if (c >= 0x80) return null;
-    output.push(c);
-  }
-  for (let idx = basic > 0 ? basic + 1 : 0; idx < input.length; ) {
-    const old = i;
-    let w = 1;
-    for (let k = base; ; k += base) {
-      if (idx >= input.length) return null;
-      const digit = basicToDigit(input.charCodeAt(idx++));
-      if (digit >= base || digit > Math.floor((maxInt - i) / w)) return null;
-      i += digit * w;
-      const t = k <= bias ? tMin : k >= bias + tMax ? tMax : k - bias;
-      if (digit < t) break;
-      if (w > Math.floor(maxInt / (base - t))) return null;
-      w *= base - t;
-    }
-    const length = output.length + 1;
-    bias = adapt(i - old, length, old === 0);
-    if (Math.floor(i / length) > maxInt - n) return null;
-    n += Math.floor(i / length);
-    i %= length;
-    output.splice(i++, 0, n);
-  }
-  return String.fromCodePoint(...output);
 }
