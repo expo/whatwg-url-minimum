@@ -49,9 +49,9 @@
   },
   "keywords": [],
   "license": "MIT",
-  "repository": "https://github.com/kitten/whatwg-url-minimum",
+  "repository": "https://github.com/expo/whatwg-url-minimum",
   "bugs": {
-    "url": "https://github.com/kitten/whatwg-url-minimum/issues"
+    "url": "https://github.com/expo/whatwg-url-minimum/issues"
   },
   "devDependencies": {
     "@babel/plugin-transform-typescript": "^7.28.5",
