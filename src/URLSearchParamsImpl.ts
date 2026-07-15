@@ -125,7 +125,10 @@ export class URLSearchParams implements URLSearchParamsLike {
       let item: IteratorResult<unknown>;
       while (!(item = toObject(iterator.next())).done)
         internals.list.push(toQueryPair(item.value));
-    } else if (typeof init === 'object' && init != null) {
+    } else if (
+      (typeof init === 'object' || typeof init === 'function') &&
+      init != null
+    ) {
       const keys = Object.keys(init);
       for (let idx = 0; idx < keys.length; idx++) {
         const key = keys[idx];
