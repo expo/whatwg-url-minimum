@@ -20,7 +20,11 @@ function wptTest(run: any, name: string) {
 globalThis.test = wptTest;
 globalThis.subsetTestByKey = (_key: any, _test: any, run: any, name: string) =>
   wptTest(run, name);
-globalThis.promise_test = (run: any) => {
+globalThis.promise_test = (run: any, name?: string) => {
+  if (name && name !== 'Loading data…') {
+    test(name, run);
+    return;
+  }
   const id = relative(cwd, getCallSites(2)[1].scriptName);
   describe(`resources (${id})`, run);
 };

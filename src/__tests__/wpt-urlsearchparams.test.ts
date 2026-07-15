@@ -11,3 +11,4 @@ require('./wpt/urlsearchparams-set.any.js');
 require('./wpt/urlsearchparams-size.any.js');
 require('./wpt/urlsearchparams-sort.any.js');
 require('./wpt/urlsearchparams-stringifier.any.js');
+require('./wpt/urlencoded-parser.any.js');
