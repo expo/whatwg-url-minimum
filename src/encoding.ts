@@ -243,16 +243,6 @@ export function utf8PercentEncodeString(
   return output;
 }
 
-// See: https://github.com/jsdom/whatwg-url/blob/v15.1.0/lib/urlencoded.js
-
-function replacePlusByteWithSpace(bytes: Uint8Array): Uint8Array {
-  let fromIdx = 0;
-  let idx = 0;
-  while ((idx = bytes.indexOf(43 /*'+'*/, fromIdx)) > -1)
-    bytes[idx] = 32 /*' '*/;
-  return bytes;
-}
-
 // https://url.spec.whatwg.org/#concept-urlencoded-parser
 function parseUrlencodedComponent(input: string): string {
   let hasPercent = false;
@@ -296,7 +286,7 @@ function parseUrlencodedComponent(input: string): string {
   return decoded;
 }
 
-export function parseUrlencodedString(input: string): [string, string][] {
+export function parseUrlencoded(input: string): [string, string][] {
   const entries: [string, string][] = [];
   let lastIdx = 0;
   let idx = 0;
@@ -318,41 +308,20 @@ export function parseUrlencodedString(input: string): [string, string][] {
   return entries;
 }
 
-export function parseUrlencoded(input: Uint8Array): [string, string][] {
-  const entries: [string, string][] = [];
-  let lastIdx = 0;
-  let idx = 0;
-  while (idx < input.byteLength) {
-    idx = input.indexOf(38 /*'&'*/, lastIdx);
-    if (idx < 0) idx = input.byteLength;
-    const slice = input.subarray(lastIdx, idx);
-    lastIdx = idx + 1;
-    if (slice.byteLength === 0) {
-      continue;
-    }
-
-    let equalIdx = slice.indexOf(61 /*'='*/);
-    if (equalIdx < 0) equalIdx = slice.byteLength;
-
-    const name = replacePlusByteWithSpace(slice.slice(0, equalIdx));
-    const value = replacePlusByteWithSpace(slice.slice(equalIdx + 1));
-    const nameString = utf8Decode(percentDecodeBytes(name));
-    const valueString = utf8Decode(percentDecodeBytes(value));
-    entries.push([nameString, valueString]);
-  }
-  return entries;
-}
-
 // https://url.spec.whatwg.org/#concept-urlencoded-serializer
-export function serializeUrlencodedComponent(value: string): string {
-  return utf8PercentEncodeString(value, isURLEncodedPercentEncode, true);
-}
-
 export function serializeUrlencoded(entries: [string, string][]): string {
   let output = '';
   for (let idx = 0; idx < entries.length; idx++) {
-    const name = serializeUrlencodedComponent(entries[idx][0]);
-    const value = serializeUrlencodedComponent(entries[idx][1]);
+    const name = utf8PercentEncodeString(
+      entries[idx][0],
+      isURLEncodedPercentEncode,
+      true
+    );
+    const value = utf8PercentEncodeString(
+      entries[idx][1],
+      isURLEncodedPercentEncode,
+      true
+    );
     output += idx !== 0 ? `&${name}=${value}` : `${name}=${value}`;
   }
   return output;
