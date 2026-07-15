@@ -42,6 +42,7 @@ export function normalizeDomain(domain: string): string | null {
       (hasNonASCII &&
         (/^\p{Mark}/u.test(label) ||
           !hasValidJoiners(label) ||
+          !hasValidBidi(label) ||
           label.startsWith('xn--')))
     ) {
       return null;
@@ -219,6 +220,15 @@ function hasValidJoiners(label: string): boolean {
     return false;
   }
   return true;
+}
+
+const rtlCodePoint =
+  /(?![\p{Mark}\p{Decimal_Number}])[\p{Script=Arabic}\p{Script=Hebrew}]/u;
+const latinCodePoint = /\p{Script=Latin}/u;
+
+// This is not full RFC 5893 CheckBidi validation, since we have no `Bidi_Class` on regexes
+function hasValidBidi(label: string): boolean {
+  return !rtlCodePoint.test(label) || !latinCodePoint.test(label);
 }
 
 // Adapted from @stacksjs/ts-punycode, MIT License.
