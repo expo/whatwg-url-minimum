@@ -1,9 +1,4 @@
-import { excluded } from './fixtures/wpt-harness';
-
-excluded([
-  // DOMException doesn't match fixture
-  'URLSearchParams constructor, DOMException as argument',
-]);
+import './fixtures/wpt-harness';
 
 require('./wpt/urlsearchparams-append.any.js');
 require('./wpt/urlsearchparams-constructor.any.js');

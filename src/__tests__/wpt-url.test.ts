@@ -1,6 +1,4 @@
-import { excluded } from './fixtures/wpt-harness';
-
-excluded([]);
+import './fixtures/wpt-harness';
 
 require('./wpt/url-constructor.any.js');
 require('./wpt/url-origin.any.js');

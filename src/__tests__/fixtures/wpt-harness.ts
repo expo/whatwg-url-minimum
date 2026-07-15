@@ -13,20 +13,8 @@ globalThis.fetch = async (url: any): Promise<Response> => {
   return new Response(JSON.stringify(mod, null, 2));
 };
 
-let isExcluded: Set<string> | undefined;
-export function excluded(names: string[]) {
-  isExcluded = new Set(names);
-}
-
 function wptTest(run: any, name: string) {
-  // NOTE(@kitten): Skip test if it contains URL-encoded data, unicode codes, or punycodes
-  const skip =
-    isExcluded?.has(name) ||
-    (name &&
-      (/%[0-9a-f]{2}/i.test(name) /* urlencoded data */ ||
-        /[\u007e-\uffff]/i.test(name) /* unicode codepoint */ ||
-        /xn--/i.test(name)) /* punycode */);
-  (skip ? test.skip : test)(name, run);
+  test(name, run);
 }
 
 globalThis.test = wptTest;
