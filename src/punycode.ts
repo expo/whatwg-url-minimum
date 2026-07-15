@@ -56,7 +56,8 @@ function digitToBasic(digit: number): string {
 
 function adapt(delta: number, points: number, first: boolean): number {
   let k = 0;
-  delta = Math.floor((first ? delta / damp : delta >> 1) + delta / points);
+  delta = first ? Math.floor(delta / damp) : delta >> 1;
+  delta += Math.floor(delta / points);
   for (; delta > ((base - tMin) * tMax) >> 1; k += base) {
     delta = Math.floor(delta / (base - tMin));
   }
@@ -74,7 +75,8 @@ function encodePunycode(input: string): string {
       handled++;
     }
   }
-  if (handled) output += '-';
+  const basic = handled;
+  if (basic) output += '-';
   let n = initialN;
   let delta = 0;
   let bias = initialBias;
@@ -98,7 +100,7 @@ function encodePunycode(input: string): string {
           q = Math.floor((q - t) / (base - t));
         }
         output += digitToBasic(q);
-        bias = adapt(delta, handled + 1, handled === output.length - 1);
+        bias = adapt(delta, handled + 1, handled === basic);
         delta = 0;
         handled++;
       }
