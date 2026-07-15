@@ -7,21 +7,36 @@ import {
 } from './generated/uts46';
 
 export function normalizeDomain(domain: string): string | null {
-  const domainHasNonASCII = /[^\0-\x7f]/.test(domain);
-  if (domainHasNonASCII) {
-    if (hasDisallowedIDNACodePoint(domain)) return null;
-    domain = mapIDNADomain(domain)
-      .normalize('NFKC')
-      .replace(/[\u3002\uff0e\uff61]/g, '.')
-      .toLowerCase();
-  } else {
-    domain = domain.toLowerCase();
+  let hasNonASCII = false;
+  let needsLowercase = false;
+  for (let idx = 0; idx < domain.length; idx++) {
+    const c = domain.charCodeAt(idx);
+    if (c <= 0x20 || c === 0x25 /*'%'*/ || c === 0x7f) {
+      return null;
+    }
+    if (c >= 0x80) {
+      hasNonASCII = true;
+      break;
+    }
+    if (c >= 0x41 && c <= 0x5a) needsLowercase = true;
   }
+  if (!hasNonASCII)
+    return domain !== ''
+      ? needsLowercase
+        ? domain.toLowerCase()
+        : domain
+      : null;
+
+  if (hasDisallowedIDNACodePoint(domain)) return null;
+  domain = mapIDNADomain(domain)
+    .normalize('NFKC')
+    .replace(/[\u3002\uff0e\uff61]/g, '.')
+    .toLowerCase();
   const labels = domain.split('.');
   for (let idx = 0; idx < labels.length; idx++) {
     const label = labels[idx];
     if (label === '') continue;
-    const hasNonASCII = domainHasNonASCII && /[^\0-\x7f]/.test(label);
+    const hasNonASCII = /[^\0-\x7f]/.test(label);
     if (
       containsInvalidDomainCodePoint(label) ||
       (hasNonASCII &&

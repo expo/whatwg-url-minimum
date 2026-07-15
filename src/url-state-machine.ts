@@ -327,32 +327,28 @@ function codePointToString(c: number | undefined): string {
   return c <= 0xffff ? String.fromCharCode(c) : String.fromCodePoint(c);
 }
 
-function asciiLowercaseCodePointToString(c: number): string {
-  return String.fromCharCode(c >= 0x41 && c <= 0x5a ? c + 0x20 : c);
-}
-
 const parseSchemeStart: Parser = c => {
   const start = p;
   if (
     c != null &&
     ((c >= 0x41 && c <= 0x5a) /*A-Z*/ || (c >= 0x61 && c <= 0x7a)) /*a-z*/
   ) {
-    let pointer = p;
-    do {
-      b += asciiLowercaseCodePointToString(c);
-      pointer += codePointSize(c);
-      c = codePointAt(i, pointer);
-    } while (
-      c != null &&
-      (c === 43 /*'+'*/ ||
-        c === 45 /*'-'*/ ||
-        c === 46 /*'.'*/ ||
-        (c >= 0x41 && c <= 0x5a) /*A-Z*/ ||
-        (c >= 0x61 && c <= 0x7a) /*a-z*/ ||
-        (c >= 0x30 && c <= 0x39)) /*0-9*/
-    );
+    let pointer = p + 1;
+    c = i.charCodeAt(pointer);
+    while (
+      c === 43 /*'+'*/ ||
+      c === 45 /*'-'*/ ||
+      c === 46 /*'.'*/ ||
+      (c >= 0x41 && c <= 0x5a) /*A-Z*/ ||
+      (c >= 0x61 && c <= 0x7a) /*a-z*/ ||
+      (c >= 0x30 && c <= 0x39) /*0-9*/
+    ) {
+      pointer++;
+      c = i.charCodeAt(pointer);
+    }
+    b = i.slice(p, pointer).toLowerCase();
     p = pointer;
-    return parseScheme(c);
+    return parseScheme(pointer < i.length ? c : undefined);
   } else if (!m) {
     --p;
     return continueParse(start, c)
@@ -365,20 +361,7 @@ const parseSchemeStart: Parser = c => {
 
 const parseScheme: Parser = c => {
   const start = p;
-  if (
-    c != null &&
-    (c === 43 /*'+'*/ ||
-      c === 45 /*'-'*/ ||
-      c === 46 /*'.'*/ ||
-      (c >= 0x41 && c <= 0x5a) /*A-Z*/ ||
-      (c >= 0x61 && c <= 0x7a) /*a-z*/ ||
-      (c >= 0x30 && c <= 0x39)) /*0-9*/
-  ) {
-    b += asciiLowercaseCodePointToString(c);
-    return continueParse(start, c)
-      ? parseScheme(codePointAt(i, p))
-      : URLParseMode.Success;
-  } else if (c === 58 /*':'*/) {
+  if (c === 58 /*':'*/) {
     if (m) {
       if (isSpecial(u.scheme) !== isSpecial(b)) {
         return URLParseMode.Success;
