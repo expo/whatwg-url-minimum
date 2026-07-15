@@ -208,7 +208,11 @@ export function isIPv4(input: string): boolean {
   let endIdx = input.length;
   let startIdx = input.lastIndexOf('.', endIdx - 2) + 1;
   if (input.charCodeAt(endIdx - 1) === 46 /*'.'*/) endIdx--;
-  return (
-    endIdx > startIdx && parseIPv4Number(input.slice(startIdx, endIdx)) >= 0
-  );
+  if (endIdx <= startIdx) return false;
+  if (parseIPv4Number(input.slice(startIdx, endIdx)) >= 0) return true;
+  for (; startIdx < endIdx; startIdx++) {
+    const c = input.charCodeAt(startIdx);
+    if (c < 0x30 || c > 0x39 /*0-9*/) return false;
+  }
+  return true;
 }
