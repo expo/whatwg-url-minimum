@@ -15,16 +15,20 @@ const targetDir = path.resolve(__dirname, '..', 'src', '__tests__', 'wpt');
 
 // These resources we download, but the test runner doesn't need to know about them.
 const resources = [
+  'interfaces/url.idl',
   'resources/percent-encoding.json',
   'resources/IdnaTestV2.json',
   'resources/setters_tests.json',
   'resources/toascii.json',
   'resources/urltestdata.json',
   'resources/urltestdata-javascript-only.json',
+  'resources/idlharness.js',
+  'resources/webidl2/lib/webidl2.js',
 ];
 
 // These tests we can download and run directly in /test/web-platform.js.
 exports.directlyRunnableTests = [
+  'idlharness.any.js',
   'url-searchparams.any.js',
   'url-setters-stripping.any.js',
   'url-statics-canparse.any.js',
@@ -70,6 +74,8 @@ if (require.main === module) {
 async function main() {
   await fs.rm(targetDir, { recursive: true, force: true, maxRetries: 5 });
   await fs.mkdir(path.resolve(targetDir, 'resources'), { recursive: true });
+  await fs.mkdir(path.resolve(targetDir, 'interfaces'), { recursive: true });
+  await fs.mkdir(path.resolve(targetDir, 'support'), { recursive: true });
 
   await Promise.all(
     [
@@ -78,9 +84,21 @@ async function main() {
       ...exports.resourceDependentTests,
     ].map(async file => {
       const res = await fetch(`${urlPrefix}${file}`);
-      const text = await res.text();
+      const output =
+        file === 'resources/idlharness.js'
+          ? 'support/idlharness.js'
+          : file === 'resources/webidl2/lib/webidl2.js'
+            ? 'support/WebIDLParser.js'
+            : file;
+      let text = await res.text();
+      if (output === 'support/WebIDLParser.js') {
+        text = text.replace(
+          /\n\/\/# sourceMappingURL=webidl2\.js\.map\n?$/,
+          '\n'
+        );
+      }
       await fs.writeFile(
-        path.resolve(targetDir, file),
+        path.resolve(targetDir, output),
         await prettier.format(text, {
           filepath: file,
           singleQuote: true,
