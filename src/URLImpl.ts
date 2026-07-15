@@ -24,6 +24,11 @@ export function updateURLQuery(url: URL, query: string | null): void {
   url[_implSymbol].url.query = query;
 }
 
+export function appendURLQuery(url: URL, query: string): void {
+  const urlRecord = url[_implSymbol].url;
+  urlRecord.query = urlRecord.query ? `${urlRecord.query}&${query}` : query;
+}
+
 interface URLInternals {
   url: URLAbstract;
   query: URLSearchParams | null;
