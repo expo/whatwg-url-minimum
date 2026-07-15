@@ -45,6 +45,21 @@ const RELATIVE_URLS = [
   ['path/file', 'https://example.com/base/'],
 ];
 
+const IDNA_URLS = [
+  'https://faß.de/path?x=1',
+  'https://βόλος.com/',
+  'https://نامه‌ای.com/',
+  'https://Bücher.de/',
+  'https://www．lookout．net/',
+  'https://xn--zca.xn--zca/',
+];
+
+const INVALID_IDNA_URLS = [
+  'https://يa/',
+  'https://look־out.net/',
+  'https://xn--a.ß/',
+];
+
 const QUERIES = [
   'a=1&b=2&c=3&d=4&e=5',
   'name=John+Doe&email=john%40example.com&msg=Hello%2C+World%21',
@@ -60,6 +75,8 @@ const engines: Engine[] = [
   },
 ];
 let sink = 0;
+
+const IDNA_ENGINE_LABELS = new Set(['whatwg-url-minimum', 'whatwg-url']);
 
 await addReactNativeURLPolyfill();
 addEngine('whatwg-url-without-unicode', 'whatwg-url-without-unicode');
@@ -85,6 +102,23 @@ const BENCHMARKS: Record<
       object = new URL(input, base);
     }
     return object!.protocol.length + object!.pathname.length;
+  },
+  'URL construction (IDNA/TR46)': URL => () => {
+    let object: URL | null = null;
+    for (const input of IDNA_URLS) {
+      object = new URL(input);
+    }
+    return object!.host.length + object!.href.length;
+  },
+  'URL.canParse (invalid IDNA/TR46)': URL => {
+    if (!URL.canParse) return null;
+    return () => {
+      let valid = false;
+      for (const input of INVALID_IDNA_URLS) {
+        valid = URL.canParse!(input);
+      }
+      return Number(valid);
+    };
   },
   'URL.canParse (valid)': URL => {
     if (!URL.canParse) return null;
@@ -193,6 +227,12 @@ const BENCHMARKS: Record<
 for (const [label, createBenchmark] of Object.entries(BENCHMARKS)) {
   describe(label, () => {
     for (const engine of engines) {
+      if (
+        label.includes('IDNA/TR46') &&
+        !IDNA_ENGINE_LABELS.has(engine.label)
+      ) {
+        continue;
+      }
       const run = createBenchmark(engine.URL, engine.URLSearchParams);
       if (run) {
         bench(engine.label, () => {
