@@ -1,5 +1,11 @@
 import { type URLSearchParamsLike } from './types';
-import { toUSVString, toIterator, toObject, toQueryPair } from './conversions';
+import {
+  toUSVString,
+  toWellFormed,
+  toIterator,
+  toObject,
+  toQueryPair,
+} from './conversions';
 import { parseUrlencoded, serializeUrlencoded } from './encoding';
 import { type URL, appendURLQuery, updateURLQuery } from './URLImpl';
 
@@ -119,11 +125,18 @@ export class URLSearchParams implements URLSearchParamsLike {
       let item: IteratorResult<unknown>;
       while (!(item = toObject(iterator.next())).done)
         internals.list.push(toQueryPair(item.value));
-    } else if (typeof init === 'object' && init != null) {
+    } else if (
+      (typeof init === 'object' || typeof init === 'function') &&
+      init != null
+    ) {
       const keys = Object.keys(init);
       for (let idx = 0; idx < keys.length; idx++) {
-        const value = toUSVString(init[keys[idx]]);
-        internals.list.push([keys[idx], value]);
+        const key = keys[idx];
+        const name = toWellFormed(key);
+        const value = toUSVString(init[key]);
+        const tuple = internals.list.find(tuple => tuple[0] === name);
+        if (tuple) tuple[1] = value;
+        else internals.list.push([name, value]);
       }
     } else if (init !== undefined) {
       let asString = toUSVString(init);

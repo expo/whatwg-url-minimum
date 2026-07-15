@@ -8,8 +8,8 @@ import {
   isSpecialQueryPercentEncode,
   isPathPercentEncode,
   isUserinfoPercentEncode,
-  normalizeDomain,
 } from './encoding';
+import { normalizeDomain } from './punycode';
 
 import {
   isIPv4,
@@ -133,12 +133,13 @@ function parseHost(input: string, isOpaque: boolean) {
     const domain =
       input.indexOf('%') === -1 ? input : percentDecodeString(input);
     // NOTE(@kitten): This fixes a bug in whatwg-url-without-unicode where domain isn't normalized to be lowercase
-    if (isIPv4(domain)) {
-      return parseIPv4(domain);
-    } else if (containsForbiddenHostCodePoint(domain)) {
+    const asciiDomain = normalizeDomain(domain);
+    if (asciiDomain === null || containsForbiddenHostCodePoint(asciiDomain)) {
       return null;
+    } else if (isIPv4(asciiDomain)) {
+      return parseIPv4(asciiDomain);
     } else {
-      return normalizeDomain(domain);
+      return asciiDomain;
     }
   }
 }
