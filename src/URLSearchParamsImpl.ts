@@ -25,7 +25,7 @@ export function createSearchParams(
 ): URLSearchParams {
   const searchParams = new URLSearchParams();
   searchParams[_implSymbol].url = url;
-  searchParams[_implSymbol].urlQueryIsSerialized = query == null;
+  searchParams[_implSymbol].serialized = query == null;
   if (query) {
     searchParams[_implSymbol].list = parseUrlencoded(query);
   }
@@ -41,14 +41,14 @@ export function updateSearchParams(
   } else {
     searchParams[_implSymbol].list.length = 0;
   }
-  searchParams[_implSymbol].urlQueryIsSerialized = query == null;
+  searchParams[_implSymbol].serialized = query == null;
 }
 
 function updateInternalURL(internals: URLSearchParamsInternals): void {
   if (internals.url) {
     const query = serializeUrlencoded(internals.list);
     updateURLQuery(internals.url, query || null);
-    internals.urlQueryIsSerialized = true;
+    internals.serialized = true;
   }
 }
 
@@ -96,7 +96,7 @@ class URLSearchParamsIteratorImpl<T>
 interface URLSearchParamsInternals {
   list: [string, string][];
   url: URL | null;
-  urlQueryIsSerialized: boolean;
+  serialized: boolean;
 }
 
 export class URLSearchParams implements URLSearchParamsLike {
@@ -108,7 +108,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     const internals: URLSearchParamsInternals = (this[_implSymbol] = {
       list: [],
       url: null,
-      urlQueryIsSerialized: true,
+      serialized: true,
     });
     let iterator: Iterator<[string, string]> | undefined;
     if (Array.isArray(init)) {
@@ -141,7 +141,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     value = toUSVString(value);
     this[_implSymbol].list.push([name, value]);
     const internals = this[_implSymbol];
-    if (internals.url && internals.urlQueryIsSerialized) {
+    if (internals.url && internals.serialized) {
       appendURLQuery(internals.url, serializeUrlencoded([[name, value]]));
     } else {
       updateInternalURL(internals);
