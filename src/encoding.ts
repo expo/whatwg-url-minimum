@@ -1,14 +1,7 @@
-// See: https://github.com/jsdom/whatwg-url/blob/v15.1.0/lib/encoding.js
-
-const utf8Decoder = new TextDecoder('utf-8', { ignoreBOM: true });
-
-export function utf8Decode(bytes: Uint8Array): string {
-  return utf8Decoder.decode(bytes);
-}
-
 // See: https://github.com/jsdom/whatwg-url/blob/v15.1.0/lib/percent-encoding.js
 
 const HEX = '0123456789ABCDEF';
+const percentByteSequence = /(?:%[0-9A-Fa-f]{2})+/g;
 
 // https://url.spec.whatwg.org/#percent-encode
 function percentEncode(c: number): string {
@@ -69,54 +62,22 @@ export function percentDecodeString(
   let idx = 0;
   for (; idx < input.length; idx++) {
     const c = input.charCodeAt(idx);
-    if (c >= 0x80 || c === 37 /*'%'*/ || (spaceAsPlus && c === 43) /*'+'*/) {
+    if (c === 37 /*'%'*/ || (spaceAsPlus && c === 43) /*'+'*/) {
       break;
     }
   }
   if (idx === input.length) return input;
 
-  const prefix = input.slice(0, idx);
-  const bytes = new Uint8Array(input.length * 4);
-  let byteIdx = 0;
-  for (let c: number; idx < input.length; idx++) {
-    c = input.charCodeAt(idx);
-    if (c === 37 /*'%'*/) {
-      const hi = decodeHexDigit(input.charCodeAt(idx + 1));
-      const lo = decodeHexDigit(input.charCodeAt(idx + 2));
-      if (hi >= 0 && lo >= 0) {
-        bytes[byteIdx++] = (hi << 4) | lo;
-        idx += 2;
-        continue;
+  return (spaceAsPlus ? input.replace(/\+/g, ' ') : input).replace(
+    percentByteSequence,
+    bytes => {
+      try {
+        return decodeURIComponent(bytes);
+      } catch {
+        return '\ufffd'.repeat(bytes.length / 3);
       }
-    } else if (spaceAsPlus && c === 43 /*'+'*/) {
-      c = 32 /*' '*/;
-    } else if (c >= 0xd800 && c <= 0xdbff && idx + 1 < input.length) {
-      const next = input.charCodeAt(idx + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        c = ((c - 0xd800) << 10) + next - 0xdc00 + 0x10000;
-        idx++;
-      }
-    } else if (c >= 0xdc00 && c <= 0xdfff) {
-      c = 0xfffd;
     }
-
-    if (c <= 0x7f) {
-      bytes[byteIdx++] = c;
-    } else if (c <= 0x7ff) {
-      bytes[byteIdx++] = 0xc0 | (c >> 6);
-      bytes[byteIdx++] = 0x80 | (c & 0x3f);
-    } else if (c <= 0xffff) {
-      bytes[byteIdx++] = 0xe0 | (c >> 12);
-      bytes[byteIdx++] = 0x80 | ((c >> 6) & 0x3f);
-      bytes[byteIdx++] = 0x80 | (c & 0x3f);
-    } else {
-      bytes[byteIdx++] = 0xf0 | (c >> 18);
-      bytes[byteIdx++] = 0x80 | ((c >> 12) & 0x3f);
-      bytes[byteIdx++] = 0x80 | ((c >> 6) & 0x3f);
-      bytes[byteIdx++] = 0x80 | (c & 0x3f);
-    }
-  }
-  return prefix + utf8Decode(bytes.subarray(0, byteIdx));
+  );
 }
 
 // https://url.spec.whatwg.org/#c0-control-percent-encode-set
