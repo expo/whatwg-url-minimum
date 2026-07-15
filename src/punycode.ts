@@ -7,21 +7,27 @@ import {
 } from './generated/uts46';
 
 export function normalizeDomain(domain: string): string | null {
-  if (hasDisallowedIDNACodePoint(domain)) return null;
-  domain = mapIDNADomain(domain)
-    .normalize('NFKC')
-    .replace(/[\u3002\uff0e\uff61]/g, '.')
-    .toLowerCase();
+  const domainHasNonASCII = /[^\0-\x7f]/.test(domain);
+  if (domainHasNonASCII) {
+    if (hasDisallowedIDNACodePoint(domain)) return null;
+    domain = mapIDNADomain(domain)
+      .normalize('NFKC')
+      .replace(/[\u3002\uff0e\uff61]/g, '.')
+      .toLowerCase();
+  } else {
+    domain = domain.toLowerCase();
+  }
   const labels = domain.split('.');
   for (let idx = 0; idx < labels.length; idx++) {
     const label = labels[idx];
     if (label === '') continue;
-    const hasNonASCII = /[^\0-\x7f]/.test(label);
+    const hasNonASCII = domainHasNonASCII && /[^\0-\x7f]/.test(label);
     if (
       containsInvalidDomainCodePoint(label) ||
-      /^\p{Mark}/u.test(label) ||
-      !hasValidJoiners(label) ||
-      (hasNonASCII && label.startsWith('xn--'))
+      (hasNonASCII &&
+        (/^\p{Mark}/u.test(label) ||
+          !hasValidJoiners(label) ||
+          label.startsWith('xn--')))
     ) {
       return null;
     }
