@@ -1,6 +1,7 @@
 import './fixtures/wpt-harness';
 
 require('./wpt/url-constructor.any.js');
+require('./wpt/IdnaTestV2.any.js');
 require('./wpt/url-origin.any.js');
 require('./wpt/url-searchparams.any.js');
 require('./wpt/url-setters-stripping.any.js');

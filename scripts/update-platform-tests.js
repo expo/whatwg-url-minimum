@@ -16,6 +16,7 @@ const targetDir = path.resolve(__dirname, '..', 'src', '__tests__', 'wpt');
 // These resources we download, but the test runner doesn't need to know about them.
 const resources = [
   'resources/percent-encoding.json',
+  'resources/IdnaTestV2.json',
   'resources/setters_tests.json',
   'resources/toascii.json',
   'resources/urltestdata.json',
@@ -47,6 +48,7 @@ exports.directlyRunnableTests = [
 // files in a case-by-case way. We still download them, but they're in a separately-exported array so that the runner
 // can distinguish.
 exports.resourceDependentTests = [
+  'IdnaTestV2.any.js',
   'url-constructor.any.js',
   'url-origin.any.js',
   'url-setters.any.js',
