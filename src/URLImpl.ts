@@ -68,6 +68,8 @@ export class URL implements URLLike {
   }
 
   static parse(input: string | URLLike, base?: string | URLLike): URL | null {
+    input = toUSVString(input);
+    if (base !== undefined) base = toUSVString(base);
     try {
       return new URL(input, base);
     } catch {
@@ -76,26 +78,16 @@ export class URL implements URLLike {
   }
 
   static canParse(input: string | URLLike, base?: string | URLLike): boolean {
+    input = toUSVString(input);
+    if (base !== undefined) base = toUSVString(base);
     let parsedBase: URLAbstract | null = null;
     if (base != null) {
-      parsedBase = parseURL(
-        typeof base === 'string' ? base : `${base}`,
-        null,
-        null,
-        0
-      );
+      parsedBase = parseURL(base, null, null, 0);
       if (parsedBase == null) {
         return false;
       }
     }
-    return (
-      parseURL(
-        typeof input === 'string' ? input : `${input}`,
-        null,
-        parsedBase,
-        0
-      ) != null
-    );
+    return parseURL(input, null, parsedBase, 0) != null;
   }
 
   get href() {

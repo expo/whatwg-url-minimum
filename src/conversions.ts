@@ -27,30 +27,29 @@ export function toObject<T = object>(value: unknown, context?: string): T {
 export function toIterator(value: unknown): Iterator<any> | undefined {
   if (
     value != null &&
-    typeof value === 'object' &&
-    typeof value[Symbol.iterator] === 'function'
+    (typeof value === 'object' || typeof value === 'function')
   ) {
-    const iterator = value[Symbol.iterator]();
+    const method = value[Symbol.iterator];
+    if (method == null) return undefined;
+    if (typeof method !== 'function') {
+      throw new TypeError('The provided value is not iterable');
+    }
+    const iterator = method.call(value);
     if (!iterator || typeof iterator !== 'object') {
       throw new TypeError(
         'Result of the Symbol.iterator method is not an object'
       );
     }
     return iterator;
-  } else {
-    return undefined;
   }
+  return undefined;
 }
 
 export function toQueryPair(value: unknown): [string, string] {
   let iterator: Iterator<any> | undefined;
   if (Array.isArray(value)) {
-    if (value.length === 2) {
-      const tuple = value as [unknown, unknown];
-      tuple[0] = toUSVString(tuple[0]);
-      tuple[1] = toUSVString(tuple[1]);
-      return tuple as [string, string];
-    }
+    const tuple = value.map(toUSVString);
+    if (tuple.length === 2) return tuple as [string, string];
   } else if ((iterator = toIterator(value)) != null) {
     const a = toObject<IteratorResult<unknown>>(iterator.next());
     const b = toObject<IteratorResult<unknown>>(iterator.next());
