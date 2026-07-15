@@ -27,7 +27,7 @@ export function updateURLQuery(url: URL, query: string | null): void {
 
 interface URLInternals {
   url: URLAbstract;
-  query: URLSearchParams;
+  query: URLSearchParams | null;
 }
 
 export class URL implements URLLike {
@@ -52,7 +52,7 @@ export class URL implements URLLike {
     if (url == null) {
       throw new TypeError(`Invalid URL: ${input}`);
     }
-    this[_implSymbol] = { url, query: createSearchParams(this, url.query) };
+    this[_implSymbol] = { url, query: null };
   }
 
   static createObjectURL(_input: any): string {
@@ -93,7 +93,9 @@ export class URL implements URLLike {
       throw new TypeError(`Invalid URL: ${value}`);
     }
     this[_implSymbol].url = url;
-    updateSearchParams(this[_implSymbol].query, url.query);
+    if (this[_implSymbol].query) {
+      updateSearchParams(this[_implSymbol].query, url.query);
+    }
   }
 
   get origin() {
@@ -206,17 +208,22 @@ export class URL implements URLLike {
     const { url, query } = this[_implSymbol];
     if (!value) {
       url.query = null;
-      updateSearchParams(query, null);
+      if (query) updateSearchParams(query, null);
     } else {
       const input = value[0] === '?' ? value.substring(1) : value;
       url.query = '';
       parseURL(input, url, null, URLParseMode.Query);
-      updateSearchParams(query, url.query);
+      if (query) updateSearchParams(query, url.query);
     }
   }
 
   get searchParams() {
-    return this[_implSymbol].query;
+    const internals = this[_implSymbol];
+    let query = internals.query;
+    if (query == null) {
+      query = internals.query = createSearchParams(this, internals.url.query);
+    }
+    return query;
   }
 
   get hash() {

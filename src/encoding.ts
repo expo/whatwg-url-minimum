@@ -19,6 +19,40 @@ function percentEncode(c: number): string {
   return hex.length === 1 ? `%0${hex}` : `%${hex}`;
 }
 
+function utf8PercentEncodeScalar(
+  codePoint: number,
+  percentEncodePredicate: (c: number) => boolean,
+  spaceAsPlus = false
+): string {
+  if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+    codePoint = 0xfffd;
+  }
+  if (codePoint <= 0x7f) {
+    if (spaceAsPlus && codePoint === 32 /*' '*/) return '+';
+    return percentEncodePredicate(codePoint)
+      ? percentEncode(codePoint)
+      : String.fromCharCode(codePoint);
+  } else if (codePoint <= 0x7ff) {
+    return (
+      percentEncode(0xc0 | (codePoint >> 6)) +
+      percentEncode(0x80 | (codePoint & 0x3f))
+    );
+  } else if (codePoint <= 0xffff) {
+    return (
+      percentEncode(0xe0 | (codePoint >> 12)) +
+      percentEncode(0x80 | ((codePoint >> 6) & 0x3f)) +
+      percentEncode(0x80 | (codePoint & 0x3f))
+    );
+  } else {
+    return (
+      percentEncode(0xf0 | (codePoint >> 18)) +
+      percentEncode(0x80 | ((codePoint >> 12) & 0x3f)) +
+      percentEncode(0x80 | ((codePoint >> 6) & 0x3f)) +
+      percentEncode(0x80 | (codePoint & 0x3f))
+    );
+  }
+}
+
 export function decodeHexDigit(c: number): number {
   if (c >= 0x30 && c <= 0x39 /*0-9*/) {
     return c - 0x30;
@@ -166,13 +200,8 @@ export function utf8PercentEncodeCodePoint(
   codePoint: number | undefined,
   percentEncodePredicate: (c: number) => boolean
 ): string {
-  const bytes = utf8Encode(String.fromCodePoint(codePoint || 0));
-  let output = '';
-  for (let idx = 0; idx < bytes.length; idx++)
-    output += percentEncodePredicate(bytes[idx])
-      ? percentEncode(bytes[idx])
-      : String.fromCharCode(bytes[idx]);
-  return output;
+  codePoint = codePoint || 0;
+  return utf8PercentEncodeScalar(codePoint, percentEncodePredicate);
 }
 
 // https://url.spec.whatwg.org/#string-percent-encode-after-encoding
@@ -182,52 +211,99 @@ export function utf8PercentEncodeString(
   percentEncodePredicate: (c: number) => boolean,
   spaceAsPlus = false
 ) {
-  const bytes = utf8Encode(input);
   let output = '';
-  for (let idx = 0; idx < bytes.length; idx++) {
-    if (spaceAsPlus && bytes[idx] === 32 /*' '*/) {
+  let idx = 0;
+  for (; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    if (c >= 0x80) break;
+    if (spaceAsPlus && c === 32 /*' '*/) {
       output += '+';
     } else {
-      output += percentEncodePredicate(bytes[idx])
-        ? percentEncode(bytes[idx])
-        : String.fromCharCode(bytes[idx]);
+      output += percentEncodePredicate(c) ? percentEncode(c) : input[idx];
     }
+  }
+  if (idx === input.length) return output;
+
+  for (; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    let codePoint = c;
+    if (c >= 0xd800 && c <= 0xdbff && idx + 1 < input.length) {
+      const next = input.charCodeAt(idx + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        codePoint = ((c - 0xd800) << 10) + next - 0xdc00 + 0x10000;
+        idx++;
+      }
+    }
+    output += utf8PercentEncodeScalar(
+      codePoint,
+      percentEncodePredicate,
+      spaceAsPlus
+    );
   }
   return output;
 }
 
-// See: https://github.com/jsdom/whatwg-url/blob/v15.1.0/lib/urlencoded.js
+// https://url.spec.whatwg.org/#concept-urlencoded-parser
+function parseUrlencodedComponent(input: string): string {
+  let hasPercent = false;
+  let output = '';
+  for (let idx = 0; idx < input.length; idx++) {
+    const c = input.charCodeAt(idx);
+    if (c === 43 /*'+'*/) {
+      output += ' ';
+    } else {
+      if (c === 37 /*'%'*/) hasPercent = true;
+      output += input[idx];
+    }
+  }
+  if (!hasPercent) return output;
 
-function replacePlusByteWithSpace(bytes: Uint8Array): Uint8Array {
-  let fromIdx = 0;
-  let idx = 0;
-  while ((idx = bytes.indexOf(43 /*'+'*/, fromIdx)) > -1)
-    bytes[idx] = 32 /*' '*/;
-  return bytes;
+  let byteIdx = 0;
+  let hasNonASCIIByte = false;
+  const bytes = new Uint8Array(output.length);
+  for (let idx = 0; idx < output.length; idx++) {
+    const c = output.charCodeAt(idx);
+    if (c === 37 /*'%'*/) {
+      const hi = decodeHexDigit(output.charCodeAt(idx + 1));
+      const lo = decodeHexDigit(output.charCodeAt(idx + 2));
+      if (hi >= 0 && lo >= 0) {
+        const byte = (hi << 4) | lo;
+        bytes[byteIdx++] = byte;
+        if (byte >= 0x80) hasNonASCIIByte = true;
+        idx += 2;
+        continue;
+      }
+    }
+    bytes[byteIdx++] = c;
+  }
+
+  if (hasNonASCIIByte) return utf8Decode(bytes.subarray(0, byteIdx));
+
+  let decoded = '';
+  for (let idx = 0; idx < byteIdx; idx++) {
+    decoded += String.fromCharCode(bytes[idx]);
+  }
+  return decoded;
 }
 
-// https://url.spec.whatwg.org/#concept-urlencoded-parser
-export function parseUrlencoded(input: Uint8Array): [string, string][] {
+export function parseUrlencoded(input: string): [string, string][] {
   const entries: [string, string][] = [];
   let lastIdx = 0;
   let idx = 0;
-  while (idx < input.byteLength) {
-    idx = input.indexOf(38 /*'&'*/, lastIdx);
-    if (idx < 0) idx = input.byteLength;
-    const slice = input.subarray(lastIdx, idx);
-    lastIdx = idx + 1;
-    if (slice.byteLength === 0) {
-      continue;
+  while (idx <= input.length) {
+    idx = input.indexOf('&', lastIdx);
+    if (idx < 0) idx = input.length;
+    if (idx !== lastIdx) {
+      const part = input.slice(lastIdx, idx);
+      let equalIdx = part.indexOf('=');
+      if (equalIdx < 0) equalIdx = part.length;
+      entries.push([
+        parseUrlencodedComponent(part.slice(0, equalIdx)),
+        parseUrlencodedComponent(part.slice(equalIdx + 1)),
+      ]);
     }
-
-    let equalIdx = slice.indexOf(61 /*'='*/);
-    if (equalIdx < 0) equalIdx = slice.byteLength;
-
-    const name = replacePlusByteWithSpace(slice.slice(0, equalIdx));
-    const value = replacePlusByteWithSpace(slice.slice(equalIdx + 1));
-    const nameString = utf8Decode(percentDecodeBytes(name));
-    const valueString = utf8Decode(percentDecodeBytes(value));
-    entries.push([nameString, valueString]);
+    lastIdx = idx + 1;
+    if (idx === input.length) break;
   }
   return entries;
 }
@@ -252,6 +328,19 @@ export function serializeUrlencoded(entries: [string, string][]): string {
 }
 
 export function normalizeDomain(domain: string): string | null {
+  let isASCII = true;
+  for (let idx = 0; idx < domain.length; idx++) {
+    const c = domain.charCodeAt(idx);
+    if (c > 0x7f) {
+      isASCII = false;
+      break;
+    }
+    if (c <= 0x20 || c === 0x25 /*'%'*/) {
+      return null;
+    }
+  }
+  if (isASCII) return domain.toLowerCase();
+
   const labels = domain
     .normalize('NFC')
     .replace(/[\u3002\uFF0E\uFF61.]/g, '.')

@@ -1,6 +1,6 @@
 import { type URLSearchParamsLike } from './types';
 import { toUSVString, toIterator, toObject, toQueryPair } from './conversions';
-import { parseUrlencoded, serializeUrlencoded, utf8Encode } from './encoding';
+import { parseUrlencoded, serializeUrlencoded } from './encoding';
 import { type URL, updateURLQuery } from './URLImpl';
 
 declare class _Iterator<
@@ -26,7 +26,7 @@ export function createSearchParams(
   const searchParams = new URLSearchParams();
   searchParams[_implSymbol].url = url;
   if (query) {
-    searchParams[_implSymbol].list = parseUrlencoded(utf8Encode(query));
+    searchParams[_implSymbol].list = parseUrlencoded(query);
   }
   return searchParams;
 }
@@ -36,7 +36,7 @@ export function updateSearchParams(
   query: string | null
 ): void {
   if (query) {
-    searchParams[_implSymbol].list = parseUrlencoded(utf8Encode(query));
+    searchParams[_implSymbol].list = parseUrlencoded(query);
   } else {
     searchParams[_implSymbol].list.length = 0;
   }
@@ -123,7 +123,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     } else if (init !== undefined) {
       let asString = toUSVString(init);
       asString = asString[0] === '?' ? asString.substring(1) : asString;
-      internals.list = parseUrlencoded(utf8Encode(asString));
+      internals.list = parseUrlencoded(asString);
     }
   }
 
@@ -132,7 +132,9 @@ export class URLSearchParams implements URLSearchParamsLike {
   }
 
   append(name: string, value: string): void {
-    this[_implSymbol].list.push([toUSVString(name), toUSVString(value)]);
+    name = toUSVString(name);
+    value = toUSVString(value);
+    this[_implSymbol].list.push([name, value]);
     updateInternalURL(this[_implSymbol]);
   }
 
@@ -187,22 +189,30 @@ export class URLSearchParams implements URLSearchParamsLike {
     value = toUSVString(value);
     const { list } = this[_implSymbol];
     let hasEntry = false;
+    let changed = false;
     let idx = 0;
     while (idx < list.length) {
       if (list[idx][0] === name) {
         if (hasEntry) {
           list.splice(idx, 1);
+          changed = true;
         } else {
           hasEntry = true;
-          list[idx][1] = value;
+          if (list[idx][1] !== value) {
+            list[idx][1] = value;
+            changed = true;
+          }
           idx++;
         }
       } else {
         idx++;
       }
     }
-    if (!hasEntry) list.push([name, value]);
-    updateInternalURL(this[_implSymbol]);
+    if (!hasEntry) {
+      list.push([name, value]);
+      changed = true;
+    }
+    if (changed) updateInternalURL(this[_implSymbol]);
   }
 
   sort() {
