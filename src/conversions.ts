@@ -7,6 +7,14 @@ export function toUSVString(value: unknown): string {
   return typeof value === 'string' ? value : String(value);
 }
 
+const unpairedSurrogatePattern =
+  /[\ud800-\udbff](?![\udc00-\udfff])|(^|[^\ud800-\udbff])[\udc00-\udfff]/g;
+
+export function toWellFormed(value: string): string {
+  // TODO(@kitten): Replace with toWellFormed once it's widely available (blocked on old Hermes)
+  return value.replace(unpairedSurrogatePattern, '$1\ufffd');
+}
+
 export function toObject<T = object>(value: unknown, context?: string): T {
   if (typeof value !== 'object' || value == null) {
     let message = context ? `${context}: ` : '';
