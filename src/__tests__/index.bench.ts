@@ -67,6 +67,13 @@ const QUERIES = [
   'arr=1&arr=2&arr=3&arr=4&arr=5&arr=6',
 ];
 
+const PERCENT_HEAVY_QUERIES = [
+  `ascii=${'%41'.repeat(64)}&space=${'+'.repeat(64)}&reserved=${'%2F%3F%23%5B%5D%40'.repeat(16)}`,
+  `utf8=${'%E8%B7%AF%E5%BE%84%20%F0%9F%92%A9'.repeat(32)}`,
+  `mixed=${'value%20'.repeat(64)}&literal=%zz%20x&trailing=%`,
+  `malformed=${'%FE%FF%C2'.repeat(32)}`,
+];
+
 const engines: Engine[] = [
   {
     label: 'whatwg-url-minimum',
@@ -181,6 +188,13 @@ const BENCHMARKS: Record<
       params = new URLSearchParams(query);
     }
     return params!.toString().length;
+  },
+  'URLSearchParams percent-heavy parse': (_URL, URLSearchParams) => () => {
+    let params: URLSearchParams | null = null;
+    for (const query of PERCENT_HEAVY_QUERIES) {
+      params = new URLSearchParams(query);
+    }
+    return params!.size + (params!.get('malformed')?.length || 0);
   },
   'URLSearchParams percent-heavy stringify': (_URL, URLSearchParams) => {
     const params = new URLSearchParams();
