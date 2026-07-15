@@ -3,10 +3,6 @@ import { excluded } from './fixtures/wpt-harness';
 excluded([
   // DOMException doesn't match fixture
   'URLSearchParams constructor, DOMException as argument',
-  // USVString normalization is excluded
-  'Construct with 2 unpaired surrogates (no trailing)',
-  'Construct with 3 unpaired surrogates (no leading)',
-  'Construct with object with NULL, non-ASCII, and surrogate keys',
 ]);
 
 require('./wpt/urlsearchparams-append.any.js');
