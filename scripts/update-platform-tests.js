@@ -63,6 +63,11 @@ exports.resourceDependentTests = [
 // - failure.html
 // - percent-encoding.window.js
 // - toascii.window.js
+//
+// IdnaTestV2-removed.any.js is intentionally omitted. It contains obsolete/deprecated IDNA cases that are not part of
+// the active URL Standard conformance target. Related toascii cases that require revalidating pre-existing xn-- labels
+// are disabled in the local duplicated tests instead of reintroducing a punycode decoder solely for removed validity
+// coverage.
 
 if (require.main === module) {
   main().catch(e => {
