@@ -30,6 +30,7 @@ function containsInvalidDomainCodePoint(domain: string): boolean {
       c <= 0x20 ||
       c === 0x25 /*'%'*/ ||
       c === 0x7f ||
+      (c >= 0xd800 && c <= 0xdfff) ||
       (c >= 0x80 && c <= 0x9f) ||
       (c >= 0xfdd0 && c <= 0xfdef) ||
       (c & 0xfffe) === 0xfffe ||
