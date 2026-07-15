@@ -10,7 +10,8 @@ const prettier = require('prettier');
 // 3. Copy the commit hash
 const commitHash = '181476aa16e8b28a07698bef3a0275fa53dd22e5';
 
-const urlPrefix = `https://raw.githubusercontent.com/web-platform-tests/wpt/${commitHash}/url/`;
+const wptPrefix = `https://raw.githubusercontent.com/web-platform-tests/wpt/${commitHash}/`;
+const urlPrefix = `${wptPrefix}url/`;
 const targetDir = path.resolve(__dirname, '..', 'src', '__tests__', 'wpt');
 
 // These resources we download, but the test runner doesn't need to know about them.
@@ -88,7 +89,12 @@ async function main() {
       ...exports.directlyRunnableTests,
       ...exports.resourceDependentTests,
     ].map(async file => {
-      const res = await fetch(`${urlPrefix}${file}`);
+      const res = await fetch(getURL(file));
+      if (!res.ok) {
+        throw new Error(
+          `Failed to fetch ${file}: ${res.status} ${res.statusText}`
+        );
+      }
       const output =
         file === 'resources/idlharness.js'
           ? 'support/idlharness.js'
@@ -104,13 +110,35 @@ async function main() {
       }
       await fs.writeFile(
         path.resolve(targetDir, output),
-        await prettier.format(text, {
-          filepath: file,
-          singleQuote: true,
-          arrowParens: 'avoid',
-          trailingComma: 'es5',
-        })
+        await format(text, file)
       );
     })
   );
+}
+
+async function format(text, file) {
+  try {
+    return await prettier.format(text, {
+      filepath: file,
+      singleQuote: true,
+      arrowParens: 'avoid',
+      trailingComma: 'es5',
+    });
+  } catch (e) {
+    if (e && e.name === 'UndefinedParserError') {
+      return text;
+    }
+    throw e;
+  }
+}
+
+function getURL(file) {
+  if (
+    file === 'interfaces/url.idl' ||
+    file === 'resources/idlharness.js' ||
+    file === 'resources/webidl2/lib/webidl2.js'
+  ) {
+    return `${wptPrefix}${file}`;
+  }
+  return `${urlPrefix}${file}`;
 }
