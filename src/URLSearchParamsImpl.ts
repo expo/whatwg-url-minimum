@@ -1,7 +1,7 @@
 import { type URLSearchParamsLike } from './types';
 import { toUSVString, toIterator, toObject, toQueryPair } from './conversions';
 import { parseUrlencoded, serializeUrlencoded } from './encoding';
-import { type URL, updateURLQuery } from './URLImpl';
+import { type URL, appendURLQuery, updateURLQuery } from './URLImpl';
 
 declare class _Iterator<
   T,
@@ -25,6 +25,7 @@ export function createSearchParams(
 ): URLSearchParams {
   const searchParams = new URLSearchParams();
   searchParams[_implSymbol].url = url;
+  searchParams[_implSymbol].serialized = query == null;
   if (query) {
     searchParams[_implSymbol].list = parseUrlencoded(query);
   }
@@ -40,12 +41,14 @@ export function updateSearchParams(
   } else {
     searchParams[_implSymbol].list.length = 0;
   }
+  searchParams[_implSymbol].serialized = query == null;
 }
 
 function updateInternalURL(internals: URLSearchParamsInternals): void {
   if (internals.url) {
     const query = serializeUrlencoded(internals.list);
     updateURLQuery(internals.url, query || null);
+    internals.serialized = true;
   }
 }
 
@@ -93,6 +96,7 @@ class URLSearchParamsIteratorImpl<T>
 interface URLSearchParamsInternals {
   list: [string, string][];
   url: URL | null;
+  serialized: boolean;
 }
 
 export class URLSearchParams implements URLSearchParamsLike {
@@ -104,6 +108,7 @@ export class URLSearchParams implements URLSearchParamsLike {
     const internals: URLSearchParamsInternals = (this[_implSymbol] = {
       list: [],
       url: null,
+      serialized: true,
     });
     let iterator: Iterator<[string, string]> | undefined;
     if (Array.isArray(init)) {
@@ -135,7 +140,12 @@ export class URLSearchParams implements URLSearchParamsLike {
     name = toUSVString(name);
     value = toUSVString(value);
     this[_implSymbol].list.push([name, value]);
-    updateInternalURL(this[_implSymbol]);
+    const internals = this[_implSymbol];
+    if (internals.url && internals.serialized) {
+      appendURLQuery(internals.url, serializeUrlencoded([[name, value]]));
+    } else {
+      updateInternalURL(internals);
+    }
   }
 
   delete(name: string, value?: string): void {
